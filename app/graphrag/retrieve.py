@@ -1,3 +1,4 @@
+from typing import Any, Dict, List, Optional
 from app.db.neo4j_driver import run_query
 
 def get_similar_cases(qc = 0, soil_type = None):

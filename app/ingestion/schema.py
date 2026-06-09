@@ -1,4 +1,5 @@
 from app.db.neo4j_driver import run_query
+from app.utils.logger import get_logger
 
 def create_constraints():
     queries = [
