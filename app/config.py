@@ -1,0 +1,6 @@
+NEO4J_URI="neo4j+s://a2f033bc.databases.neo4j.io"
+NEO4J_USER="a2f033bc"
+NEO4J_PASSWORD="hp_AUKOdF2qQfY_8kyNhKdmMW_fHJSZ4Oj_msypdDlM"
+NEO4J_DATABASE="a2f033bc"
+AURA_INSTANCEID="a2f033bc"
+AURA_INSTANCENAME="Geotech AI"
