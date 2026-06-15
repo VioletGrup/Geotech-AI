@@ -1,0 +1,6 @@
+.env
+*.joblib
+__pycache__/
+*.pyc
+"neo4j password.png"
+Neo4j-*.txt

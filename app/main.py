@@ -2,12 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from config import APP_NAME
+from app.config import APP_NAME
 from app.utils.logger import get_logger
 from app.db.neo4j_driver import Neo4jNotConfiguredError, verify_connectivity
 from app.api.routes_nodes import router as nodes_router
 from app.api.routes_predict import router as predict_router
 from app.api.routes_query import router as query_router
+from app.api.routes_agent import router as agent_router
 from app.ingestion.schema import create_constraints
 
 logger = get_logger(__name__)
@@ -28,12 +29,13 @@ app = FastAPI(title = APP_NAME, version = "0.1.0", lifespan = lifespan)
 app.include_router(nodes_router)
 app.include_router(query_router)
 app.include_router(predict_router)
+app.include_router(agent_router)
 
 @app.get("/")
 def root():
     return {
         "message": "Geotech GraphRAG MVP is running",
-        "routes": ["/nodes/*", "/query/*", "/predict/*"],
+        "routes": ["/nodes/*", "/query/*", "/predict/*", "/agent/*"],
     }
 
 

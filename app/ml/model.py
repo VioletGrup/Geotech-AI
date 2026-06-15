@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,10 +15,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-from config import MIN_TRAINING_ROWS, MODEL_PATH, RANDOM_STATE
-from features import build_feature_record
-from logger import get_logger
-from retrieve import get_training_rows
+from app.config import MIN_TRAINING_ROWS, MODEL_PATH, RANDOM_STATE
+from app.ml.features import build_feature_record
+from app.utils.logger import get_logger
+from app.graphrag.retrieve import get_training_rows
 
 logger = get_logger(__name__)
 
@@ -99,7 +99,7 @@ def train_model_from_graph() -> Dict[str, Any]:
         "training_rows": int(len(df)),
         "mae": float(mean_absolute_error(y_test, predictions)),
         "r2": float(r2_score(y_test, predictions)) if len(df) >= 20 else None,
-        "trained_at": datetime.now(datetime.timezone.utc).isoformat() + "Z",
+        "trained_at": datetime.now(timezone.utc).isoformat(),
         "features": feature_columns,
     }
     bundle = {
