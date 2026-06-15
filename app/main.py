@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import APP_NAME
 from app.utils.logger import get_logger
@@ -26,6 +27,14 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title = APP_NAME, version = "0.1.0", lifespan = lifespan)
+
+# Allow the Vite dev server (and built frontend) to call the API from the browser.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(nodes_router)
 app.include_router(query_router)
 app.include_router(predict_router)

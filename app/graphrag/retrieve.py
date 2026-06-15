@@ -66,3 +66,23 @@ def get_similar_cases(
 def get_training_rows() -> List[Dict[str, Any]]:
     """Return one row per logged load test for model training."""
     return [record.data() for record in run_query(_TRAINING_ROWS)]
+
+
+_ALL_CASES = """
+MATCH (p:Pile)-[:HAS_LOAD_TEST]->(t:PileLoadTest)
+OPTIONAL MATCH (p)-[:INTERSECTS]->(s:SoilLayer)<-[:REPRESENTS]-(c:CPTTest)
+RETURN p.id        AS pile_id,
+       p.type      AS pile_type,
+       p.diameter  AS diameter,
+       p.length    AS length,
+       c.qc        AS qc,
+       s.soil_type AS soil_type,
+       t.max_load  AS max_load
+ORDER BY t.max_load DESC
+LIMIT $limit
+"""
+
+
+def get_all_cases(limit: int = 200) -> List[Dict[str, Any]]:
+    """Return all logged pile load-test cases (for the results browser)."""
+    return [record.data() for record in run_query(_ALL_CASES, {"limit": int(limit)})]

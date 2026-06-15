@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import ALLOW_RAW_CYPHER
 from app.db.neo4j_driver import run_query
-from app.graphrag.retrieve import get_similar_cases
+from app.graphrag.retrieve import get_similar_cases, get_all_cases
 
 router = APIRouter(tags=["query"])
 
@@ -34,5 +34,14 @@ def run_raw_query(payload: dict):
     try:
         result = run_query(payload["cypher"], payload.get("params", {}))
         return {"result": [record.data() for record in result]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cases")
+def list_cases(limit: int = 200):
+    """List all logged pile cases, newest/highest-load first."""
+    try:
+        return {"results": get_all_cases(limit=limit)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
