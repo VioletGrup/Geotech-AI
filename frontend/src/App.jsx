@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { api } from "./api.js";
+import React, { useEffect, useState } from "react";
 import AddNodes from "./components/AddNodes.jsx";
 import BrowseCases from "./components/BrowseCases.jsx";
 import Copilot from "./components/Copilot.jsx";
@@ -16,9 +15,11 @@ export default function App() {
   const [base, setBase] = useState("");
 
   useEffect(() => {
-    api.health()
-      .then(async () => { setStatus("ok"); setBase(await api.base()); })
-      .catch(async () => { setStatus("down"); setBase(await api.base()); });
+    import("./api.js").then(({ api }) => {
+      api.health()
+        .then(async () => { setStatus("ok"); setBase(await api.base()); })
+        .catch(async () => { setStatus("down"); setBase(await api.base()); });
+    });
   }, []);
 
   const active = VIEWS.find((v) => v.id === view);
@@ -45,7 +46,6 @@ export default function App() {
           {base && <div style={{ marginTop: 4, opacity: 0.7 }}>{base.replace("http://", "")}</div>}
         </div>
       </aside>
-
       <main className="content">
         <div className="head">
           <h2>{active.label}</h2>

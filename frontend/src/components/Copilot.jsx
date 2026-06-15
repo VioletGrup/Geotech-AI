@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { api } from "../api.js";
 
 const EXAMPLES = [
