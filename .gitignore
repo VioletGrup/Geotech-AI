@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 "neo4j password.png"
 Neo4j-*.txt
+.env
