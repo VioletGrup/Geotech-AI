@@ -137,5 +137,11 @@ def get_similar_piles():
     MATCH (p)-[:HAS_LOAD_TEST]->(t:PileLoadTest)
     WHERE c.qc >= $qc - 2000 AND c.qc <= $qc + 2000
     RETURN p.id AS pile, t.max_load AS load, s.soil_type AS soil
-    LIMIT 10
+    LIMIT 20
+    """
+
+def retrieve_pile_id():
+    return """
+    MATCH (p:Pile {id: $id})
+    RETURN p
     """

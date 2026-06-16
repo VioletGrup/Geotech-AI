@@ -1,6 +1,5 @@
-
 import { api, NODE_ENDPOINTS } from "../api.js";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 const FORMS = {
   pile: [["id", "text"], ["diameter", "num"], ["length", "num"], ["type", "text"]],
@@ -11,9 +10,10 @@ const FORMS = {
 const ADDERS = {
   pile: api.addPile, cpt: api.addCpt, soil: api.addSoil, "load-test": api.addLoadTest,
 };
+// each link: [fields, single-fn, bulk-fn]
 const LINKS = {
-  "pile-soil": [["pile_id", "text"], ["soil_id", "text"], api.linkPileSoil],
-  "cpt-soil": [["cpt_id", "text"], ["soil_id", "text"], api.linkCptSoil],
+  "pile-soil": [[["pile_id", "text"], ["soil_id", "text"]], api.linkPileSoil, api.bulkLinkPileSoil],
+  "cpt-soil": [[["cpt_id", "text"], ["soil_id", "text"]], api.linkCptSoil, api.bulkLinkCptSoil],
 };
 
 function coerce(fields, values) {
@@ -33,12 +33,12 @@ export default function AddNodes() {
   const [busy, setBusy] = useState(false);
 
   const isLink = tab.includes("-soil");
-  const fields = isLink ? LINKS[tab].slice(0, 2) : FORMS[tab];
+  const fields = isLink ? LINKS[tab][0] : FORMS[tab];
 
   async function submitSingle() {
     setBusy(true); setMsg(null);
     try {
-      const fn = isLink ? LINKS[tab][2] : ADDERS[tab];
+      const fn = isLink ? LINKS[tab][1] : ADDERS[tab];
       const res = await fn(coerce(fields, values));
       setMsg({ ok: true, text: res.message || "Created." });
       setValues({});
@@ -57,24 +57,42 @@ export default function AddNodes() {
       setMsg({ ok: false, text: `Parse error: ${e.message}` });
       setBusy(false); return;
     }
-    const fn = NODE_ENDPOINTS[tab];
-    let ok = 0; const errors = [];
-    for (let i = 0; i < rows.length; i++) {
-      try { await fn(coerce(FORMS[tab], rows[i])); ok++; }
-      catch (e) { errors.push(`row ${i + 1}: ${e.message}`); }
-    }
-    setMsg({
-      ok: errors.length === 0,
-      text: `${ok}/${rows.length} created.` + (errors.length ? "\n" + errors.join("\n") : ""),
-    });
-    setBusy(false);
+
+    try {
+      if (isLink) {
+        // one request — backend creates all links and reports per-row errors
+        const cleaned = rows.map((r) => coerce(fields, r));
+        const res = await LINKS[tab][2](cleaned);
+        setMsg({
+          ok: res.errors.length === 0,
+          text: `${res.created}/${res.total} links created.` +
+            (res.errors.length ? "\n" + res.errors.join("\n") : ""),
+        });
+      } else {
+        // nodes have no bulk endpoint — loop client-side
+        const fn = NODE_ENDPOINTS[tab];
+        let ok = 0; const errors = [];
+        for (let i = 0; i < rows.length; i++) {
+          try { await fn(coerce(FORMS[tab], rows[i])); ok++; }
+          catch (e) { errors.push(`row ${i + 1}: ${e.message}`); }
+        }
+        setMsg({
+          ok: errors.length === 0,
+          text: `${ok}/${rows.length} created.` + (errors.length ? "\n" + errors.join("\n") : ""),
+        });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: e.message });
+    } finally { setBusy(false); }
   }
 
   const placeholder = JSON.stringify(
     tab === "pile" ? [{ id: "P-001", diameter: 0.3, length: 6, type: "driven" }]
     : tab === "cpt" ? [{ id: "C-001", depth: 8, qc: 5000, fs: 60 }]
     : tab === "soil" ? [{ id: "S-001", soil_type: "clay" }]
-    : [{ id: "LT-001", pile_id: "P-001", max_load: 220 }], null, 2
+    : tab === "load-test" ? [{ id: "LT-001", pile_id: "P-001", max_load: 220 }]
+    : tab === "pile-soil" ? [{ pile_id: "P-001", soil_id: "S-001" }]
+    : [{ cpt_id: "C-001", soil_id: "S-001" }], null, 2
   );
 
   return (
@@ -82,19 +100,19 @@ export default function AddNodes() {
       <div className="tabs">
         {["pile", "cpt", "soil", "load-test", "pile-soil", "cpt-soil"].map((t) => (
           <button key={t} className={t === tab ? "active" : ""}
-            onClick={() => { setTab(t); setValues({}); setMsg(null); if (t.includes("-soil")) setMode("single"); }}>
+            onClick={() => { setTab(t); setValues({}); setBulk(""); setMsg(null); }}>
             {t}
           </button>
         ))}
       </div>
-      {!isLink && (
-        <div className="tabs">
-          <button className={mode === "single" ? "active" : ""} onClick={() => setMode("single")}>one</button>
-          <button className={mode === "bulk" ? "active" : ""} onClick={() => setMode("bulk")}>many</button>
-        </div>
-      )}
+
+      <div className="tabs">
+        <button className={mode === "single" ? "active" : ""} onClick={() => setMode("single")}>one</button>
+        <button className={mode === "bulk" ? "active" : ""} onClick={() => setMode("bulk")}>many</button>
+      </div>
+
       <div className="panel">
-        {mode === "single" || isLink ? (
+        {mode === "single" ? (
           <>
             <h3>{isLink ? `link ${tab}` : `new ${tab}`}</h3>
             <div className="grid">

@@ -56,6 +56,8 @@ export const api = {
   addLoadTest: (b) => req("POST", "/nodes/load-test", b),
   linkPileSoil: (b) => req("POST", "/nodes/relationships/pile-soil", b),
   linkCptSoil: (b) => req("POST", "/nodes/relationships/cpt-soil", b),
+  bulkLinkPileSoil: (links) => req("POST", "/nodes/relationships/pile-soil/bulk", { links }),
+  bulkLinkCptSoil: (links) => req("POST", "/nodes/relationships/cpt-soil/bulk", { links }),
 
   // cases
   listCases: (limit = 200) => req("GET", `/query/cases?limit=${limit}`),

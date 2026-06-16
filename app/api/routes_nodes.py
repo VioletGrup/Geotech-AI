@@ -56,6 +56,12 @@ class RelationshipCPTSoil(BaseModel):
     cpt_id: str
     soil_id: str
 
+class BulkPileSoil(BaseModel):
+    links: list[RelationshipPileSoil]
+
+class BulkCPTSoil(BaseModel):
+    links: list[RelationshipCPTSoil]
+
 
 # ── Pile endpoints ────────────────────────────────────────────────────────────
 
@@ -261,3 +267,31 @@ def unlink_cpt_from_soil(cpt_id: str, soil_id: str):
         return {"message": f"CPTTest '{cpt_id}' unlinked from SoilLayer '{soil_id}'"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Bulk relationship endpoints ───────────────────────────────────────────────
+
+@router.post("/relationships/pile-soil/bulk", status_code=201)
+def bulk_link_pile_to_soil(body: BulkPileSoil):
+    """Create many INTERSECTS relationships at once. Reports per-row failures."""
+    created, errors = 0, []
+    for i, link in enumerate(body.links):
+        try:
+            run_query(queries.link_pile_soil(), link.model_dump())
+            created += 1
+        except Exception as e:
+            errors.append(f"row {i + 1} ({link.pile_id}->{link.soil_id}): {e}")
+    return {"created": created, "total": len(body.links), "errors": errors}
+
+
+@router.post("/relationships/cpt-soil/bulk", status_code=201)
+def bulk_link_cpt_to_soil(body: BulkCPTSoil):
+    """Create many REPRESENTS relationships at once. Reports per-row failures."""
+    created, errors = 0, []
+    for i, link in enumerate(body.links):
+        try:
+            run_query(queries.link_cpt_soil(), link.model_dump())
+            created += 1
+        except Exception as e:
+            errors.append(f"row {i + 1} ({link.cpt_id}->{link.soil_id}): {e}")
+    return {"created": created, "total": len(body.links), "errors": errors}
