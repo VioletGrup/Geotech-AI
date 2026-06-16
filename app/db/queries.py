@@ -26,6 +26,12 @@ def delete_pile():
     DETACH DELETE p
     """
 
+def retrieve_pile_id():
+    return """
+    MATCH (p:Pile {id: $id})
+    RETURN p
+    """
+
 # ── CPTTest ───────────────────────────────────────────────────────────────────
 
 def create_cpt():
@@ -54,6 +60,12 @@ def delete_cpt():
     DETACH DELETE c
     """
 
+def retrieve_cpt_id():
+    return """
+    MATCH (c: CPTTest {id: $id})
+    RETURN c
+    """
+
 # ── SoilLayer ─────────────────────────────────────────────────────────────────
 
 def create_soil_layer():
@@ -78,6 +90,11 @@ def delete_soil_layer():
     DETACH DELETE s
     """
 
+def retrieve_soil_id():
+    return """
+    MATCH (s: SoilLayer {id: $id})
+    RETURN s
+    """
 # ── PileLoadTest ──────────────────────────────────────────────────────────────
 
 def create_pile_load_test():
@@ -140,8 +157,3 @@ def get_similar_piles():
     LIMIT 20
     """
 
-def retrieve_pile_id():
-    return """
-    MATCH (p:Pile {id: $id})
-    RETURN p
-    """
