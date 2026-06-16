@@ -1,3 +1,6 @@
+import truststore
+truststore.inject_into_ssl()
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
