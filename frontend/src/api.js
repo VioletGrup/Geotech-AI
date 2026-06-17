@@ -54,10 +54,16 @@ export const api = {
   addCpt: (b) => req("POST", "/nodes/cpt", b),
   addSoil: (b) => req("POST", "/nodes/soil", b),
   addLoadTest: (b) => req("POST", "/nodes/load-test", b),
+  addSite: (b) => req("POST", "/nodes/site", b),
+  addZone: (b) => req("POST", "/nodes/zone", b),
   linkPileSoil: (b) => req("POST", "/nodes/relationships/pile-soil", b),
   linkCptSoil: (b) => req("POST", "/nodes/relationships/cpt-soil", b),
   bulkLinkPileSoil: (links) => req("POST", "/nodes/relationships/pile-soil/bulk", { links }),
   bulkLinkCptSoil: (links) => req("POST", "/nodes/relationships/cpt-soil/bulk", { links }),
+  linkPileZone: (b) => req("POST", "/nodes/relationships/pile-zone", b),
+  linkCptZone: (b) => req("POST", "/nodes/relationships/cpt-zone", b),
+  bulkLinkPileZone: (links) => req("POST", "/nodes/relationships/pile-zone/bulk", { links }),
+  bulkLinkCptZone: (links) => req("POST", "/nodes/relationships/cpt-zone/bulk", { links }),
 
   // cases
   listCases: (limit = 200) => req("GET", `/query/cases?limit=${limit}`),
@@ -79,4 +85,6 @@ export const NODE_ENDPOINTS = {
   cpt: api.addCpt,
   soil: api.addSoil,
   "load-test": api.addLoadTest,
+  site: api.addSite,
+  zone: api.addZone,
 };

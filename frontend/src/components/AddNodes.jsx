@@ -6,14 +6,19 @@ const FORMS = {
   cpt: [["id", "text"], ["depth", "num"], ["qc", "num"], ["fs", "num"]],
   soil: [["id", "text"], ["soil_type", "text"]],
   "load-test": [["id", "text"], ["pile_id", "text"], ["max_load", "num"]],
+  site: [["id", "text"], ["name", "text"]],
+  zone: [["id", "text"], ["site_id", "text"], ["name", "text"]],
 };
 const ADDERS = {
   pile: api.addPile, cpt: api.addCpt, soil: api.addSoil, "load-test": api.addLoadTest,
+  site: api.addSite, zone: api.addZone,
 };
 // each link: [fields, single-fn, bulk-fn]
 const LINKS = {
   "pile-soil": [[["pile_id", "text"], ["soil_id", "text"]], api.linkPileSoil, api.bulkLinkPileSoil],
   "cpt-soil": [[["cpt_id", "text"], ["soil_id", "text"]], api.linkCptSoil, api.bulkLinkCptSoil],
+  "pile-zone": [[["pile_id", "text"], ["zone_id", "text"]], api.linkPileZone, api.bulkLinkPileZone],
+  "cpt-zone": [[["cpt_id", "text"], ["zone_id", "text"]], api.linkCptZone, api.bulkLinkCptZone],
 };
 
 function coerce(fields, values) {
@@ -32,7 +37,7 @@ export default function AddNodes() {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const isLink = tab.includes("-soil");
+  const isLink = tab in LINKS;
   const fields = isLink ? LINKS[tab][0] : FORMS[tab];
 
   async function submitSingle() {
@@ -91,14 +96,18 @@ export default function AddNodes() {
     : tab === "cpt" ? [{ id: "C-001", depth: 8, qc: 5000, fs: 60 }]
     : tab === "soil" ? [{ id: "S-001", soil_type: "clay" }]
     : tab === "load-test" ? [{ id: "LT-001", pile_id: "P-001", max_load: 220 }]
+    : tab === "site" ? [{ id: "SITE-001", name: "North Solar Farm" }]
+    : tab === "zone" ? [{ id: "ZONE-001", site_id: "SITE-001", name: "Block A" }]
     : tab === "pile-soil" ? [{ pile_id: "P-001", soil_id: "S-001" }]
-    : [{ cpt_id: "C-001", soil_id: "S-001" }], null, 2
+    : tab === "cpt-soil" ? [{ cpt_id: "C-001", soil_id: "S-001" }]
+    : tab === "pile-zone" ? [{ pile_id: "P-001", zone_id: "ZONE-001" }]
+    : [{ cpt_id: "C-001", zone_id: "ZONE-001" }], null, 2
   );
 
   return (
     <>
       <div className="tabs">
-        {["pile", "cpt", "soil", "load-test", "pile-soil", "cpt-soil"].map((t) => (
+        {["pile", "cpt", "soil", "load-test", "site", "zone", "pile-soil", "cpt-soil", "pile-zone", "cpt-zone"].map((t) => (
           <button key={t} className={t === tab ? "active" : ""}
             onClick={() => { setTab(t); setValues({}); setBulk(""); setMsg(null); }}>
             {t}
