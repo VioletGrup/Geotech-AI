@@ -1,51 +1,110 @@
-import { api, NODE_ENDPOINTS } from "../api.js";
+import { api } from "../api.js";
 import React, { useState } from "react";
 
-const FORMS = {
-  pile: [["id", "text"], ["diameter", "num"], ["length", "num"], ["type", "text"]],
-  cpt: [["id", "text"], ["depth", "num"], ["qc", "num"], ["fs", "num"]],
-  soil: [["id", "text"], ["soil_type", "text"]],
-  "load-test": [["id", "text"], ["pile_id", "text"], ["max_load", "num"]],
-  site: [["id", "text"], ["name", "text"]],
-  zone: [["id", "text"], ["site_id", "text"], ["name", "text"]],
+// Schema v3 — one field spec per node type. Each field: [name, kind, opts?]
+//   kind: "text" | "num" | "int" | "bool" | "select"
+//   opts.fk: true  -> foreign key (builds a relationship; shown with a link hint)
+//   opts.req: true -> required
+//   opts.choices  -> for select
+const SCHEMA = {
+  site: [
+    ["id", "text", { req: true }], ["name", "text"], ["address", "text"],
+    ["coordinate_system", "text"],
+  ],
+  zone: [
+    ["id", "text", { req: true }], ["site_id", "text", { fk: true }], ["name", "text"],
+    ["pre_drill_decision", "select", { choices: ["", "Pre-Drill", "Driven"] }],
+    ["trackers_4string", "int"], ["trackers_3string", "int"], ["trackers_2string", "int"],
+  ],
+  "pile-test-location": [
+    ["id", "text", { req: true }], ["zone_id", "text", { fk: true }],
+    ["driving_type", "select", { choices: ["", "Driven", "PreDrilled"] }],
+    ["easting", "num"], ["northing", "num"], ["reduced_level", "num"],
+    ["designer", "text"], ["section_type", "text"],
+    ["target_depth", "num"], ["achieved_embedment", "num"],
+    ["drive_time", "num"], ["driving_rate", "num"],
+  ],
+  "pile-test": [
+    ["id", "text", { req: true }], ["pile_location_id", "text", { fk: true, req: true }],
+    ["test_type", "select", { choices: ["", "compression", "tension", "lateral"] }],
+    ["max_applied_force", "num"], ["max_deflection", "num"], ["load_max", "num"],
+    ["max_load_proportion_ed", "num"], ["passed", "bool"],
+  ],
+  dpsh: [
+    ["id", "text", { req: true }], ["zone_id", "text", { fk: true }],
+    ["easting", "num"], ["northing", "num"], ["refusal_depth", "num"],
+  ],
+  borehole: [
+    ["id", "text", { req: true }], ["zone_id", "text", { fk: true }],
+    ["series", "text"], ["elevation", "num"], ["total_depth", "num"], ["groundwater_depth", "num"],
+  ],
+  testpit: [
+    ["id", "text", { req: true }], ["zone_id", "text", { fk: true }],
+    ["elevation", "num"], ["total_depth", "num"],
+  ],
+  "soil-type": [
+    ["unit_name", "text", { req: true }], ["description", "text"],
+  ],
+  "ground-model": [
+    ["id", "text", { req: true }], ["location_id", "text", { fk: true }],
+  ],
+  "ground-layer": [
+    ["id", "text", { req: true }], ["ground_model_id", "text", { fk: true, req: true }],
+    ["soil_unit_name", "text", { fk: true }], ["order", "int"],
+    ["start_depth", "num"], ["end_depth", "num"],
+    ["condition", "select", { choices: ["", "Firm", "Stiff", "VeryStiff", "Hard", "Dense", "VeryDense"] }],
+  ],
+  "thermal-test": [
+    ["id", "text", { req: true }], ["testpit_id", "text", { fk: true, req: true }],
+    ["depth", "num"], ["thermal_reading", "num"], ["r_value", "num"],
+  ],
+  "lab-test": [
+    ["id", "text", { req: true }], ["location_id", "text", { fk: true, req: true }],
+    ["soil_unit_name", "text", { fk: true }],
+    ["top_depth", "num"], ["bottom_depth", "num"], ["moisture_content", "num"],
+    ["liquid_limit", "num"], ["plastic_limit", "num"], ["plasticity_index", "num"],
+    ["linear_shrinkage", "num"], ["emerson_class", "int"], ["iss", "num"],
+    ["gravel", "num"], ["sand", "num"], ["fines", "num"],
+    ["compaction_mdd", "num"], ["compaction_omc", "num"],
+    ["cbr_4day_2_5mm", "int"], ["cbr_swell", "num"],
+  ],
+  aggressivity: [
+    ["id", "text", { req: true }], ["location_id", "text", { fk: true, req: true }],
+    ["depth", "num"], ["ph", "num"], ["sulfate", "num"], ["chlorides", "num"],
+    ["resistivity", "num"], ["exposure_class_concrete", "text"], ["exposure_class_steel", "text"],
+  ],
 };
-const ADDERS = {
-  pile: api.addPile, cpt: api.addCpt, soil: api.addSoil, "load-test": api.addLoadTest,
-  site: api.addSite, zone: api.addZone,
-};
-// each link: [fields, single-fn, bulk-fn]
-const LINKS = {
-  "pile-soil": [[["pile_id", "text"], ["soil_id", "text"]], api.linkPileSoil, api.bulkLinkPileSoil],
-  "cpt-soil": [[["cpt_id", "text"], ["soil_id", "text"]], api.linkCptSoil, api.bulkLinkCptSoil],
-  "pile-zone": [[["pile_id", "text"], ["zone_id", "text"]], api.linkPileZone, api.bulkLinkPileZone],
-  "cpt-zone": [[["cpt_id", "text"], ["zone_id", "text"]], api.linkCptZone, api.bulkLinkCptZone],
-};
+
+const TABS = Object.keys(SCHEMA);
 
 function coerce(fields, values) {
   const out = {};
   for (const [name, kind] of fields) {
-    out[name] = kind === "num" ? parseFloat(values[name]) : values[name];
+    const raw = values[name];
+    if (raw === undefined || raw === "" || raw === null) continue;
+    if (kind === "num") out[name] = parseFloat(raw);
+    else if (kind === "int") out[name] = parseInt(raw, 10);
+    else if (kind === "bool") out[name] = raw === true || raw === "true";
+    else out[name] = raw;
   }
   return out;
 }
 
 export default function AddNodes() {
-  const [tab, setTab] = useState("pile");
+  const [tab, setTab] = useState("site");
   const [mode, setMode] = useState("single");
   const [values, setValues] = useState({});
   const [bulk, setBulk] = useState("");
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const isLink = tab in LINKS;
-  const fields = isLink ? LINKS[tab][0] : FORMS[tab];
+  const fields = SCHEMA[tab];
 
   async function submitSingle() {
     setBusy(true); setMsg(null);
     try {
-      const fn = isLink ? LINKS[tab][1] : ADDERS[tab];
-      const res = await fn(coerce(fields, values));
-      setMsg({ ok: true, text: res.message || "Created." });
+      const res = await api.addNode(tab, coerce(fields, values));
+      setMsg({ ok: true, text: res.message || "Saved." });
       setValues({});
     } catch (e) {
       setMsg({ ok: false, text: e.message });
@@ -62,52 +121,31 @@ export default function AddNodes() {
       setMsg({ ok: false, text: `Parse error: ${e.message}` });
       setBusy(false); return;
     }
-
     try {
-      if (isLink) {
-        // one request — backend creates all links and reports per-row errors
-        const cleaned = rows.map((r) => coerce(fields, r));
-        const res = await LINKS[tab][2](cleaned);
-        setMsg({
-          ok: res.errors.length === 0,
-          text: `${res.created}/${res.total} links created.` +
-            (res.errors.length ? "\n" + res.errors.join("\n") : ""),
-        });
-      } else {
-        // nodes have no bulk endpoint — loop client-side
-        const fn = NODE_ENDPOINTS[tab];
-        let ok = 0; const errors = [];
-        for (let i = 0; i < rows.length; i++) {
-          try { await fn(coerce(FORMS[tab], rows[i])); ok++; }
-          catch (e) { errors.push(`row ${i + 1}: ${e.message}`); }
-        }
-        setMsg({
-          ok: errors.length === 0,
-          text: `${ok}/${rows.length} created.` + (errors.length ? "\n" + errors.join("\n") : ""),
-        });
-      }
+      const res = await api.bulkNodes(tab, rows.map((r) => coerce(fields, r)));
+      setMsg({
+        ok: res.errors.length === 0,
+        text: `${res.saved}/${res.total} saved.` + (res.errors.length ? "\n" + res.errors.join("\n") : ""),
+      });
     } catch (e) {
       setMsg({ ok: false, text: e.message });
     } finally { setBusy(false); }
   }
 
-  const placeholder = JSON.stringify(
-    tab === "pile" ? [{ id: "P-001", diameter: 0.3, length: 6, type: "driven" }]
-    : tab === "cpt" ? [{ id: "C-001", depth: 8, qc: 5000, fs: 60 }]
-    : tab === "soil" ? [{ id: "S-001", soil_type: "clay" }]
-    : tab === "load-test" ? [{ id: "LT-001", pile_id: "P-001", max_load: 220 }]
-    : tab === "site" ? [{ id: "SITE-001", name: "North Solar Farm" }]
-    : tab === "zone" ? [{ id: "ZONE-001", site_id: "SITE-001", name: "Block A" }]
-    : tab === "pile-soil" ? [{ pile_id: "P-001", soil_id: "S-001" }]
-    : tab === "cpt-soil" ? [{ cpt_id: "C-001", soil_id: "S-001" }]
-    : tab === "pile-zone" ? [{ pile_id: "P-001", zone_id: "ZONE-001" }]
-    : [{ cpt_id: "C-001", zone_id: "ZONE-001" }], null, 2
-  );
+  function example() {
+    const obj = {};
+    for (const [name, kind, opts] of fields) {
+      if (opts?.req || opts?.fk) {
+        obj[name] = kind === "num" || kind === "int" ? 0 : `<${name}>`;
+      }
+    }
+    return JSON.stringify([obj], null, 2);
+  }
 
   return (
     <>
       <div className="tabs">
-        {["pile", "cpt", "soil", "load-test", "site", "zone", "pile-soil", "cpt-soil", "pile-zone", "cpt-zone"].map((t) => (
+        {TABS.map((t) => (
           <button key={t} className={t === tab ? "active" : ""}
             onClick={() => { setTab(t); setValues({}); setBulk(""); setMsg(null); }}>
             {t}
@@ -123,32 +161,51 @@ export default function AddNodes() {
       <div className="panel">
         {mode === "single" ? (
           <>
-            <h3>{isLink ? `link ${tab}` : `new ${tab}`}</h3>
+            <h3>new {tab}</h3>
             <div className="grid">
-              {fields.map(([name, kind]) => (
-                <div key={name} className={kind === "num" ? "numeric" : ""}>
-                  <label>{name}</label>
-                  <input type={kind === "num" ? "number" : "text"} step="any"
-                    value={values[name] ?? ""}
-                    onChange={(e) => setValues({ ...values, [name]: e.target.value })} />
+              {fields.map(([name, kind, opts]) => (
+                <div key={name} className={kind === "num" || kind === "int" ? "numeric" : ""}>
+                  <label>
+                    {name}
+                    {opts?.req ? " *" : ""}
+                    {opts?.fk ? " \u2192" : ""}
+                  </label>
+                  {kind === "select" ? (
+                    <select value={values[name] ?? ""}
+                      onChange={(e) => setValues({ ...values, [name]: e.target.value })}>
+                      {opts.choices.map((c) => <option key={c} value={c}>{c || "—"}</option>)}
+                    </select>
+                  ) : kind === "bool" ? (
+                    <select value={values[name] ?? ""}
+                      onChange={(e) => setValues({ ...values, [name]: e.target.value })}>
+                      <option value="">—</option>
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  ) : (
+                    <input type={kind === "num" || kind === "int" ? "number" : "text"} step="any"
+                      value={values[name] ?? ""}
+                      onChange={(e) => setValues({ ...values, [name]: e.target.value })} />
+                  )}
                 </div>
               ))}
             </div>
             <div className="row">
               <button className="btn" disabled={busy} onClick={submitSingle}>
-                {busy ? "Saving…" : isLink ? "Create link" : "Create"}
+                {busy ? "Saving…" : "Create"}
               </button>
             </div>
+            <p className="hint">* required &nbsp; \u2192 links to another node</p>
           </>
         ) : (
           <>
             <h3>bulk {tab} — paste JSON array</h3>
-            <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder={placeholder} />
+            <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder={example()} />
             <div className="row">
               <button className="btn" disabled={busy || !bulk.trim()} onClick={submitBulk}>
                 {busy ? "Importing…" : "Import all"}
               </button>
-              <button className="btn ghost" onClick={() => setBulk(placeholder)}>Insert example</button>
+              <button className="btn ghost" onClick={() => setBulk(example())}>Insert example</button>
             </div>
           </>
         )}

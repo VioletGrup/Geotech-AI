@@ -1,309 +1,158 @@
-# ── Pile ──────────────────────────────────────────────────────────────────────
+"""Cypher for the Add-data write path (schema v3).
 
-def create_pile():
-    return """
-    CREATE (p:Pile {
-        id: $id,
-        diameter: $diameter,
-        length: $length,
-        type: $type
-    })
-    RETURN p
-    """
+Each node create MERGEs the node, sets a property bag, and wires its
+foreign-key relationships in the same statement, so the frontend only needs
+node forms (no separate relationship tabs). Idempotent via MERGE.
 
-def update_pile():
-    return """
-    MATCH (p:Pile {id: $id})
-    SET p.diameter = coalesce($diameter, p.diameter),
-        p.length   = coalesce($length,   p.length),
-        p.type     = coalesce($type,     p.type)
-    RETURN p
-    """
-
-def delete_pile():
-    return """
-    MATCH (p:Pile {id: $id})
-    DETACH DELETE p
-    """
-
-def retrieve_pile_id():
-    return """
-    MATCH (p:Pile {id: $id})
-    RETURN p
-    """
-
-# ── CPTTest ───────────────────────────────────────────────────────────────────
-
-def create_cpt():
-    return """
-    CREATE (c:CPTTest {
-        id: $id,
-        depth: $depth,
-        qc: $qc,
-        fs: $fs
-    })
-    RETURN c
-    """
-
-def update_cpt():
-    return """
-    MATCH (c:CPTTest {id: $id})
-    SET c.depth = coalesce($depth, c.depth),
-        c.qc    = coalesce($qc,    c.qc),
-        c.fs    = coalesce($fs,    c.fs)
-    RETURN c
-    """
-
-def delete_cpt():
-    return """
-    MATCH (c:CPTTest {id: $id})
-    DETACH DELETE c
-    """
-
-def retrieve_cpt_id():
-    return """
-    MATCH (c: CPTTest {id: $id})
-    RETURN c
-    """
-
-# ── SoilLayer ─────────────────────────────────────────────────────────────────
-
-def create_soil_layer():
-    return """
-    CREATE (s:SoilLayer {
-        id: $id,
-        soil_type: $soil_type
-    })
-    RETURN s
-    """
-
-def update_soil_layer():
-    return """
-    MATCH (s:SoilLayer {id: $id})
-    SET s.soil_type = coalesce($soil_type, s.soil_type)
-    RETURN s
-    """
-
-def delete_soil_layer():
-    return """
-    MATCH (s:SoilLayer {id: $id})
-    DETACH DELETE s
-    """
-
-def retrieve_soil_id():
-    return """
-    MATCH (s: SoilLayer {id: $id})
-    RETURN s
-    """
-# ── PileLoadTest ──────────────────────────────────────────────────────────────
-
-def create_pile_load_test():
-    return """
-    MATCH (p:Pile {id: $pile_id})
-    CREATE (t:PileLoadTest {id: $id, max_load: $max_load})
-    CREATE (p)-[:HAS_LOAD_TEST]->(t)
-    RETURN t
-    """
-
-def update_pile_load_test():
-    return """
-    MATCH (t:PileLoadTest {id: $id})
-    SET t.max_load = coalesce($max_load, t.max_load)
-    RETURN t
-    """
-
-def delete_pile_load_test():
-    return """
-    MATCH (t:PileLoadTest {id: $id})
-    DETACH DELETE t
-    """
-
-# ── Relationships ─────────────────────────────────────────────────────────────
-
-def link_pile_soil():
-    return """
-    MATCH (p:Pile {id: $pile_id})
-    MATCH (s:SoilLayer {id: $soil_id})
-    MERGE (p)-[:INTERSECTS]->(s)
-    """
-
-def unlink_pile_soil():
-    return """
-    MATCH (p:Pile {id: $pile_id})-[r:INTERSECTS]->(s:SoilLayer {id: $soil_id})
-    DELETE r
-    """
-
-def link_cpt_soil():
-    return """
-    MATCH (c:CPTTest {id: $cpt_id})
-    MATCH (s:SoilLayer {id: $soil_id})
-    MERGE (c)-[:REPRESENTS]->(s)
-    """
-
-def unlink_cpt_soil():
-    return """
-    MATCH (c:CPTTest {id: $cpt_id})-[r:REPRESENTS]->(s:SoilLayer {id: $soil_id})
-    DELETE r
-    """
+Retrieval queries for the Copilot agent live in app/graphrag/retrieve.py.
+"""
 
 # ── Site ──────────────────────────────────────────────────────────────────────
 
-def create_site():
+def upsert_site():
     return """
-    CREATE (s:Site {
-        id: $id,
-        name: $name
-    })
+    MERGE (s:Site {id: $id})
+    SET s += $props
     RETURN s
     """
 
-def update_site():
-    return """
-    MATCH (s:Site {id: $id})
-    SET s.name = coalesce($name, s.name)
-    RETURN s
-    """
+# ── Zone (block / PCU) — linked to a Site ─────────────────────────────────────
 
-def delete_site():
-    return """
-    MATCH (s:Site {id: $id})
-    DETACH DELETE s
-    """
-
-# ── Zone ──────────────────────────────────────────────────────────────────────
-
-def create_zone():
-    # A Zone always belongs to a Site; fail (no rows) if the site is missing.
-    return """
-    MATCH (site:Site {id: $site_id})
-    CREATE (z:Zone {id: $id, name: $name})
-    CREATE (site)-[:HAS_ZONE]->(z)
-    RETURN z
-    """
-
-def update_zone():
-    return """
-    MATCH (z:Zone {id: $id})
-    SET z.name = coalesce($name, z.name)
-    RETURN z
-    """
-
-def delete_zone():
-    return """
-    MATCH (z:Zone {id: $id})
-    DETACH DELETE z
-    """
-
-# ── Location relationships (Pile / CPT → Zone) ────────────────────────────────
-
-def link_pile_zone():
-    return """
-    MATCH (p:Pile {id: $pile_id})
-    MATCH (z:Zone {id: $zone_id})
-    MERGE (p)-[:LOCATED_IN]->(z)
-    """
-
-def unlink_pile_zone():
-    return """
-    MATCH (p:Pile {id: $pile_id})-[r:LOCATED_IN]->(z:Zone {id: $zone_id})
-    DELETE r
-    """
-
-def link_cpt_zone():
-    return """
-    MATCH (c:CPTTest {id: $cpt_id})
-    MATCH (z:Zone {id: $zone_id})
-    MERGE (c)-[:LOCATED_IN]->(z)
-    """
-
-def unlink_cpt_zone():
-    return """
-    MATCH (c:CPTTest {id: $cpt_id})-[r:LOCATED_IN]->(z:Zone {id: $zone_id})
-    DELETE r
-    """
-
-# ── Real-data nodes (upsert pattern: MERGE on id, SET property bag) ────────────
-# Parsers re-run idempotently; optional fields are simply omitted from $props.
-
-def upsert_pile():
-    # Enriches an existing Pile or creates one. Real fields (easting, northing,
-    # reduced_level, designer, section_type, target_depth, achieved_embedment,
-    # refusal, refusal_depth) arrive in $props.
-    return """
-    MERGE (p:Pile {id: $id})
-    SET p += $props
-    RETURN p
-    """
-
-def upsert_zone_props():
-    # Enriches a Zone with block fields (pre_drill_decision, tracker counts, etc).
+def upsert_zone():
     return """
     MERGE (z:Zone {id: $id})
     SET z += $props
+    WITH z
+    OPTIONAL MATCH (s:Site {id: $site_id})
+    FOREACH (_ IN CASE WHEN s IS NULL THEN [] ELSE [1] END | MERGE (s)-[:HAS_ZONE]->(z))
     RETURN z
     """
 
-def upsert_investigation_point():
+# ── PileTestLocation — LOCATED_IN a Zone ──────────────────────────────────────
+
+def upsert_pile_test_location():
     return """
-    MERGE (i:InvestigationPoint {id: $id})
-    SET i += $props
-    RETURN i
+    MERGE (p:PileTestLocation {id: $id})
+    SET p += $props
+    WITH p
+    OPTIONAL MATCH (z:Zone {id: $zone_id})
+    FOREACH (_ IN CASE WHEN z IS NULL THEN [] ELSE [1] END | MERGE (p)-[:LOCATED_IN]->(z))
+    RETURN p
     """
 
-def upsert_geotech_unit():
-    return """
-    MERGE (u:GeotechUnit {id: $id})
-    SET u += $props
-    RETURN u
-    """
+# ── PileTest — HAS_TEST from a PileTestLocation ───────────────────────────────
 
-def upsert_load_test():
-    # Typed load test (compression/tension/lateral), linked to its pile.
+def upsert_pile_test():
     return """
-    MATCH (p:Pile {id: $pile_id})
-    MERGE (t:LoadTest {id: $id})
+    MATCH (p:PileTestLocation {id: $pile_location_id})
+    MERGE (t:PileTest {id: $id})
     SET t += $props
-    MERGE (p)-[:HAS_LOAD_TEST]->(t)
+    MERGE (p)-[:HAS_TEST]->(t)
     RETURN t
     """
 
-# ── Location / unit relationships ─────────────────────────────────────────────
+# ── DPSHTest — LOCATED_IN a Zone ──────────────────────────────────────────────
 
-def link_investigation_zone():
+def upsert_dpsh():
     return """
-    MATCH (i:InvestigationPoint {id: $ip_id})
-    MATCH (z:Zone {id: $zone_id})
-    MERGE (i)-[:LOCATED_IN]->(z)
+    MERGE (d:DPSHTest {id: $id})
+    SET d += $props
+    WITH d
+    OPTIONAL MATCH (z:Zone {id: $zone_id})
+    FOREACH (_ IN CASE WHEN z IS NULL THEN [] ELSE [1] END | MERGE (d)-[:LOCATED_IN]->(z))
+    RETURN d
     """
 
-def link_pile_unit():
+# ── BoreHole — LOCATED_IN a Zone ──────────────────────────────────────────────
+
+def upsert_borehole():
     return """
-    MATCH (p:Pile {id: $pile_id})
-    MATCH (u:GeotechUnit {id: $unit_id})
-    MERGE (p)-[:IN_UNIT]->(u)
+    MERGE (b:BoreHole {id: $id})
+    SET b += $props
+    WITH b
+    OPTIONAL MATCH (z:Zone {id: $zone_id})
+    FOREACH (_ IN CASE WHEN z IS NULL THEN [] ELSE [1] END | MERGE (b)-[:LOCATED_IN]->(z))
+    RETURN b
     """
 
-def link_investigation_unit():
+# ── TestPit — LOCATED_IN a Zone ───────────────────────────────────────────────
+
+def upsert_testpit():
     return """
-    MATCH (i:InvestigationPoint {id: $ip_id})
-    MATCH (u:GeotechUnit {id: $unit_id})
-    MERGE (i)-[:IN_UNIT]->(u)
+    MERGE (t:TestPit {id: $id})
+    SET t += $props
+    WITH t
+    OPTIONAL MATCH (z:Zone {id: $zone_id})
+    FOREACH (_ IN CASE WHEN z IS NULL THEN [] ELSE [1] END | MERGE (t)-[:LOCATED_IN]->(z))
+    RETURN t
     """
 
-def link_pile_nearest_probe():
+# ── SoilType (material vocabulary) ────────────────────────────────────────────
+
+def upsert_soil_type():
     return """
-    MATCH (p:Pile {id: $pile_id})
-    MATCH (i:InvestigationPoint {id: $ip_id})
-    MERGE (p)-[:NEAREST_PROBE]->(i)
+    MERGE (s:SoilType {unit_name: $unit_name})
+    SET s += $props
+    RETURN s
     """
 
-# ── Retrieval ─────────────────────────────────────────────────────────────────
+# ── GroundModel — HAS_GROUND_MODEL from a BoreHole or TestPit ─────────────────
 
-def get_similar_piles():
+def upsert_ground_model():
     return """
-    MATCH (c:CPTTest)-[:REPRESENTS]->(s:SoilLayer)<-[:INTERSECTS]-(p:Pile)
-    MATCH (p)-[:HAS_LOAD_TEST]->(t:PileLoadTest)
-    WHERE c.qc >= $qc - 2000 AND c.qc <= $qc + 2000
-    RETURN p.id AS pile, t.max_load AS load, s.soil_type AS soil
-    LIMIT 20
+    MERGE (g:GroundModel {id: $id})
+    WITH g
+    OPTIONAL MATCH (loc {id: $location_id}) WHERE loc:BoreHole OR loc:TestPit
+    FOREACH (_ IN CASE WHEN loc IS NULL THEN [] ELSE [1] END | MERGE (loc)-[:HAS_GROUND_MODEL]->(g))
+    RETURN g
+    """
+
+# ── GroundLayer — HAS_LAYER from GroundModel, OF_MATERIAL to SoilType ──────────
+
+def upsert_ground_layer():
+    return """
+    MATCH (g:GroundModel {id: $ground_model_id})
+    MERGE (l:GroundLayer {id: $id})
+    SET l += $props
+    MERGE (g)-[:HAS_LAYER]->(l)
+    WITH l
+    OPTIONAL MATCH (s:SoilType {unit_name: $soil_unit_name})
+    FOREACH (_ IN CASE WHEN s IS NULL THEN [] ELSE [1] END | MERGE (l)-[:OF_MATERIAL]->(s))
+    RETURN l
+    """
+
+# ── ThermalResistivityTest — HAS_THERMAL_TEST from a TestPit ──────────────────
+
+def upsert_thermal_test():
+    return """
+    MATCH (tp:TestPit {id: $testpit_id})
+    MERGE (x:ThermalResistivityTest {id: $id})
+    SET x += $props
+    MERGE (tp)-[:HAS_THERMAL_TEST]->(x)
+    RETURN x
+    """
+
+# ── LaboratoryTest — HAS_LAB_TEST from BoreHole|TestPit, OF_MATERIAL optional ──
+
+def upsert_lab_test():
+    return """
+    MATCH (loc {id: $location_id}) WHERE loc:BoreHole OR loc:TestPit
+    MERGE (t:LaboratoryTest {id: $id})
+    SET t += $props
+    MERGE (loc)-[:HAS_LAB_TEST]->(t)
+    WITH t
+    OPTIONAL MATCH (s:SoilType {unit_name: $soil_unit_name})
+    FOREACH (_ IN CASE WHEN s IS NULL THEN [] ELSE [1] END | MERGE (t)-[:OF_MATERIAL]->(s))
+    RETURN t
+    """
+
+# ── SoilAggressivity — HAS_AGGRESSIVITY_TEST from BoreHole|TestPit ────────────
+
+def upsert_aggressivity():
+    return """
+    MATCH (loc {id: $location_id}) WHERE loc:BoreHole OR loc:TestPit
+    MERGE (a:SoilAggressivity {id: $id})
+    SET a += $props
+    MERGE (loc)-[:HAS_AGGRESSIVITY_TEST]->(a)
+    RETURN a
     """

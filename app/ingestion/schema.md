@@ -178,20 +178,3 @@ One per test type on a `PileTestLocation` (a location has up to three).
 either a `BoreHole` or a `TestPit`. To match them uniformly you can also stamp a
 shared label `:InvestigationLocation` on both BoreHole and TestPit nodes (Neo4j
 supports multiple labels) and match `(:InvestigationLocation)-[:HAS_LAB_TEST]->`.
-
-
----
-
-## Consequences for the rest of the app
-
-- Queries / routes / parsers built against `Pile` / `InvestigationPoint` target
-  the old labels. They need updating to `PileTestLocation` / `BoreHole` /
-  `TestPit` / `PileTest` etc. before the v3 model is populated end to end.
-- The PLT parser maps cleanly onto `PileTestLocation` (coords, section,
-  embedment) + `PileTest` (the compression/tension/lateral result tables).
-- Borehole logs populate `BoreHole` -> `GroundModel` -> `GroundLayer` +
-  `LaboratoryTest`, but they are scanned field copies — OCR + manual structuring,
-  not a clean table parse.
-- ML target stays: predict `Zone.pre_drill_decision` / pile refusal
-  (`achieved_embedment < target_depth`) from DPSH refusal depth, ground model,
-  and lab/aggressivity features.
