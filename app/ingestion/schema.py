@@ -16,6 +16,9 @@ def create_constraints():
         "CREATE CONSTRAINT testpit_id IF NOT EXISTS FOR (t:TestPit) REQUIRE t.id IS UNIQUE",
         # ── Tests ───────────────────────────────────────────────────────────
         "CREATE CONSTRAINT pile_test_id IF NOT EXISTS FOR (t:PileTest) REQUIRE t.id IS UNIQUE",
+        "CREATE CONSTRAINT tension_test_id IF NOT EXISTS FOR (t:TensionPileTest) REQUIRE t.id IS UNIQUE",
+        "CREATE CONSTRAINT lateral_test_id IF NOT EXISTS FOR (t:LateralPileTest) REQUIRE t.id IS UNIQUE",
+        "CREATE CONSTRAINT compression_test_id IF NOT EXISTS FOR (t:CompressionPileTest) REQUIRE t.id IS UNIQUE",
         "CREATE CONSTRAINT thermal_test_id IF NOT EXISTS FOR (t:ThermalResistivityTest) REQUIRE t.id IS UNIQUE",
         "CREATE CONSTRAINT lab_test_id IF NOT EXISTS FOR (t:LaboratoryTest) REQUIRE t.id IS UNIQUE",
         "CREATE CONSTRAINT aggressivity_id IF NOT EXISTS FOR (a:SoilAggressivity) REQUIRE a.id IS UNIQUE",

@@ -61,15 +61,33 @@ class PileTestLocation(BaseModel):
     drive_time: Optional[float] = None
     driving_rate: Optional[float] = None
 
-class PileTest(BaseModel):
+class PileTest(BaseModel):                    # container
     id: str
-    pile_location_id: str                    # FK -> PileTestLocation (required)
-    test_type: Optional[str] = None
+    pile_location_id: Optional[str] = None   # FK -> PileTestLocation
+    section_type: Optional[str] = None
+    passed: Optional[bool] = None
+
+class TensionPileTest(BaseModel):
+    id: str
+    pile_test_id: str                        # FK -> PileTest (required)
+    uplift_applied_force: Optional[float] = None
+    uplift_max_deflection: Optional[float] = None
+    max_load_proportion_ed: Optional[float] = None
+
+class LateralPileTest(BaseModel):
+    id: str
+    pile_test_id: str                        # FK -> PileTest (required)
     max_applied_force: Optional[float] = None
-    max_deflection: Optional[float] = None
+    max_deflection_top: Optional[float] = None
     load_max: Optional[float] = None
     max_load_proportion_ed: Optional[float] = None
-    passed: Optional[bool] = None
+
+class CompressionPileTest(BaseModel):
+    id: str
+    pile_test_id: str                        # FK -> PileTest (required)
+    max_applied_force: Optional[float] = None
+    max_deflection: Optional[float] = None
+    max_load_proportion_ed: Optional[float] = None
 
 class DPSHTest(BaseModel):
     id: str
@@ -211,6 +229,21 @@ def add_pile_test(body: PileTest):
          "props": _props(body, drop=("id", "pile_location_id"))}
     return _one(queries.upsert_pile_test(), p, "t", "PileTest")
 
+@router.post("/tension-test", status_code=200)
+def add_tension_test(body: TensionPileTest):
+    p = {"id": body.id, "pile_test_id": body.pile_test_id, "props": _props(body, drop=("id", "pile_test_id"))}
+    return _one(queries.upsert_tension_test(), p, "t", "TensionPileTest")
+
+@router.post("/lateral-test", status_code=200)
+def add_lateral_test(body: LateralPileTest):
+    p = {"id": body.id, "pile_test_id": body.pile_test_id, "props": _props(body, drop=("id", "pile_test_id"))}
+    return _one(queries.upsert_lateral_test(), p, "t", "LateralPileTest")
+
+@router.post("/compression-test", status_code=200)
+def add_compression_test(body: CompressionPileTest):
+    p = {"id": body.id, "pile_test_id": body.pile_test_id, "props": _props(body, drop=("id", "pile_test_id"))}
+    return _one(queries.upsert_compression_test(), p, "t", "CompressionPileTest")
+
 @router.post("/thermal-test", status_code=200)
 def add_thermal_test(body: ThermalResistivityTest):
     p = {"id": body.id, "testpit_id": body.testpit_id, "props": _props(body, drop=("id", "testpit_id"))}
@@ -253,6 +286,9 @@ _BULK = {
     "zone": (Zone, add_zone),
     "pile-test-location": (PileTestLocation, add_pile_test_location),
     "pile-test": (PileTest, add_pile_test),
+    "tension-test": (TensionPileTest, add_tension_test),
+    "lateral-test": (LateralPileTest, add_lateral_test),
+    "compression-test": (CompressionPileTest, add_compression_test),
     "dpsh": (DPSHTest, add_dpsh),
     "borehole": (BoreHole, add_borehole),
     "testpit": (TestPit, add_testpit),

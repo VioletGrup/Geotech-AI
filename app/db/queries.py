@@ -40,14 +40,45 @@ def upsert_pile_test_location():
     RETURN p
     """
 
-# ── PileTest — HAS_TEST from a PileTestLocation ───────────────────────────────
+# ── PileTest (container) — HAS_TEST from a PileTestLocation ───────────────────
+# Holds section_type + passed; the three typed sub-tests hang off it.
 
 def upsert_pile_test():
     return """
-    MATCH (p:PileTestLocation {id: $pile_location_id})
     MERGE (t:PileTest {id: $id})
     SET t += $props
-    MERGE (p)-[:HAS_TEST]->(t)
+    WITH t
+    OPTIONAL MATCH (p:PileTestLocation {id: $pile_location_id})
+    FOREACH (_ IN CASE WHEN p IS NULL THEN [] ELSE [1] END | MERGE (p)-[:HAS_TEST]->(t))
+    RETURN t
+    """
+
+# ── Typed sub-tests — each hangs off a PileTest ───────────────────────────────
+
+def upsert_tension_test():
+    return """
+    MATCH (pt:PileTest {id: $pile_test_id})
+    MERGE (t:TensionPileTest {id: $id})
+    SET t += $props
+    MERGE (pt)-[:HAS_TENSION_TEST]->(t)
+    RETURN t
+    """
+
+def upsert_lateral_test():
+    return """
+    MATCH (pt:PileTest {id: $pile_test_id})
+    MERGE (t:LateralPileTest {id: $id})
+    SET t += $props
+    MERGE (pt)-[:HAS_LATERAL_TEST]->(t)
+    RETURN t
+    """
+
+def upsert_compression_test():
+    return """
+    MATCH (pt:PileTest {id: $pile_test_id})
+    MERGE (t:CompressionPileTest {id: $id})
+    SET t += $props
+    MERGE (pt)-[:HAS_COMPRESSION_TEST]->(t)
     RETURN t
     """
 

@@ -1,6 +1,7 @@
 # Geotech AI — Graph Schema v3
 
-All locations and tests live
+Modelled on the real Maryvale investigation data (pile tests, DPSH, boreholes,
+test pits, lab + aggressivity + thermal testing). All locations and tests live
 inside a `Zone`; every `Zone` lives inside a `Site`.
 
 Units are documented per property below. Neo4j does not enforce units — store the
@@ -52,21 +53,38 @@ A pile that was tested/installed, spatially located.
 | drive_time | float | min |
 | driving_rate | float | m/s |
 
-### PileTest
-One per test type on a `PileTestLocation` (a location has up to three).
+### PileTest  (container)
+One per `PileTestLocation`; holds the overall result and the three typed sub-tests.
 | property | type | unit |
 |---|---|---|
 | id | string (unique) | |
-| test_type | string | `tension` \| `lateral` \| `compression` |
+| section_type | string | steel section |
+| passed | bool | overall |
+
+### TensionPileTest  — child of PileTest
+| property | type | unit |
+|---|---|---|
+| id | string (unique) | |
+| uplift_applied_force | float | kN |
+| uplift_max_deflection | float | mm |
+| max_load_proportion_ed | float | % of Ed |
+
+### LateralPileTest  — child of PileTest
+| property | type | unit |
+|---|---|---|
+| id | string (unique) | |
+| max_applied_force | float | kN |
+| max_deflection_top | float | mm |
+| load_max | float | kN |
+| max_load_proportion_ed | float | % of Ed |
+
+### CompressionPileTest  — child of PileTest
+| property | type | unit |
+|---|---|---|
+| id | string (unique) | |
 | max_applied_force | float | kN |
 | max_deflection | float | mm |
-| load_max | float | kN (lateral; optional otherwise) |
-| max_load_proportion_ed | float | % of design action effect Ed |
-| passed | bool | |
-
-> Modelled as one node per type (not three labels) so queries like "all failed
-> tests" stay simple. `tension` uses *uplift* applied force/deflection; the field
-> names above are the unified equivalents.
+| max_load_proportion_ed | float | % of Ed |
 
 ### DPSHTest
 | property | type | unit |
@@ -165,6 +183,9 @@ One per test type on a `PileTestLocation` (a location has up to three).
 | `LOCATED_IN` | BoreHole -> Zone |
 | `LOCATED_IN` | TestPit -> Zone |
 | `HAS_TEST` | PileTestLocation -> PileTest |
+| `HAS_TENSION_TEST` | PileTest -> TensionPileTest |
+| `HAS_LATERAL_TEST` | PileTest -> LateralPileTest |
+| `HAS_COMPRESSION_TEST` | PileTest -> CompressionPileTest |
 | `HAS_GROUND_MODEL` | BoreHole -> GroundModel |
 | `HAS_GROUND_MODEL` | TestPit -> GroundModel |
 | `HAS_LAYER` | GroundModel -> GroundLayer |
@@ -178,3 +199,35 @@ One per test type on a `PileTestLocation` (a location has up to three).
 either a `BoreHole` or a `TestPit`. To match them uniformly you can also stamp a
 shared label `:InvestigationLocation` on both BoreHole and TestPit nodes (Neo4j
 supports multiple labels) and match `(:InvestigationLocation)-[:HAS_LAB_TEST]->`.
+
+---
+
+## Mapping from earlier schema
+
+| earlier | v3 | note |
+|---|---|---|
+| `Pile` | `PileTestLocation` | renamed + real fields (drive_time, driving_rate, driving_type) |
+| `PileLoadTest` / `LoadTest` | `PileTest` | typed: tension/lateral/compression, % of Ed, passed |
+| `InvestigationPoint` (DPSH) | `DPSHTest` | |
+| `InvestigationPoint` (BH/TP) | `BoreHole`, `TestPit` | split by method, each with a GroundModel |
+| `SoilLayer` / `GeotechUnit` | `SoilType` + `GroundLayer` | material vocab vs per-layer occurrence |
+| - | `LaboratoryTest`, `SoilAggressivity`, `ThermalResistivityTest` | new, from the lab/GIR reports |
+
+Earlier labels keep their constraints (legacy block in `schema.py`) so existing
+loaded data still validates during the transition.
+
+---
+
+## Consequences for the rest of the app
+
+- Queries / routes / parsers built against `Pile` / `InvestigationPoint` target
+  the old labels. They need updating to `PileTestLocation` / `BoreHole` /
+  `TestPit` / `PileTest` etc. before the v3 model is populated end to end.
+- The PLT parser maps cleanly onto `PileTestLocation` (coords, section,
+  embedment) + `PileTest` (the compression/tension/lateral result tables).
+- Borehole logs populate `BoreHole` -> `GroundModel` -> `GroundLayer` +
+  `LaboratoryTest`, but they are scanned field copies — OCR + manual structuring,
+  not a clean table parse.
+- ML target stays: predict `Zone.pre_drill_decision` / pile refusal
+  (`achieved_embedment < target_depth`) from DPSH refusal depth, ground model,
+  and lab/aggressivity features.

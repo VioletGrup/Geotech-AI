@@ -25,10 +25,23 @@ const SCHEMA = {
     ["drive_time", "num"], ["driving_rate", "num"],
   ],
   "pile-test": [
-    ["id", "text", { req: true }], ["pile_location_id", "text", { fk: true, req: true }],
-    ["test_type", "select", { choices: ["", "compression", "tension", "lateral"] }],
-    ["max_applied_force", "num"], ["max_deflection", "num"], ["load_max", "num"],
-    ["max_load_proportion_ed", "num"], ["passed", "bool"],
+    ["id", "text", { req: true }], ["pile_location_id", "text", { fk: true }],
+    ["section_type", "text"], ["passed", "bool"],
+  ],
+  "tension-test": [
+    ["id", "text", { req: true }], ["pile_test_id", "text", { fk: true, req: true }],
+    ["uplift_applied_force", "num"], ["uplift_max_deflection", "num"],
+    ["max_load_proportion_ed", "num"],
+  ],
+  "lateral-test": [
+    ["id", "text", { req: true }], ["pile_test_id", "text", { fk: true, req: true }],
+    ["max_applied_force", "num"], ["max_deflection_top", "num"],
+    ["load_max", "num"], ["max_load_proportion_ed", "num"],
+  ],
+  "compression-test": [
+    ["id", "text", { req: true }], ["pile_test_id", "text", { fk: true, req: true }],
+    ["max_applied_force", "num"], ["max_deflection", "num"],
+    ["max_load_proportion_ed", "num"],
   ],
   dpsh: [
     ["id", "text", { req: true }], ["zone_id", "text", { fk: true }],
