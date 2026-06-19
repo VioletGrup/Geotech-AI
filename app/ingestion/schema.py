@@ -25,7 +25,8 @@ def create_constraints():
         # ── Ground model ────────────────────────────────────────────────────
         "CREATE CONSTRAINT ground_model_id IF NOT EXISTS FOR (g:GroundModel) REQUIRE g.id IS UNIQUE",
         "CREATE CONSTRAINT ground_layer_id IF NOT EXISTS FOR (l:GroundLayer) REQUIRE l.id IS UNIQUE",
-        "CREATE CONSTRAINT soil_type_unit IF NOT EXISTS FOR (s:SoilType) REQUIRE s.unit_name IS UNIQUE",
+        "CREATE CONSTRAINT soil_type_unit IF NOT EXISTS FOR (s:SoilType) REQUIRE s.unit_no IS UNIQUE",
+        
     ]
 
     for q in queries:

@@ -98,6 +98,8 @@ One per `PileTestLocation`; holds the overall result and the three typed sub-tes
 | property | type | unit | notes |
 |---|---|---|---|
 | id | string (unique) | | full label, e.g. `BH02`, `SS-BH02` |
+| zone_id | string | | FK -> Zone |
+| ground_model_id | string | | FK -> GroundModel |
 | series | string | | `BH` \| `SS-BH` (shallow grid vs deep SPT) |
 | elevation | float | mAHD | optional |
 | total_depth | float | m | optional |
@@ -107,28 +109,36 @@ One per `PileTestLocation`; holds the overall result and the three typed sub-tes
 | property | type | unit | notes |
 |---|---|---|---|
 | id | string (unique) | | |
+| zone_id | string | | FK -> Zone |
+| ground_model_id | string | | FK -> GroundModel |
 | elevation | float | mAHD | optional |
 | total_depth | float | m | optional |
 
 ### SoilType  (material — shared reference vocabulary)
 | property | type | notes |
 |---|---|---|
-| unit_name | string (unique) | the key, e.g. `CH`, `CI`, `XW Rock` |
-| description | string | full USCS description |
+| unit_no | string (unique) | the key, e.g. `4D` |
+| origin | string | e.g. `bedrock`, `residual`, `alluvial` |
+| unit_name | string | material name, e.g. `Andesite` |
+| description | string | full description |
 
 ### GroundModel
 | property | type | notes |
 |---|---|---|
-| id | string (unique) | one per BoreHole / TestPit |
+| id | string (unique) | one per BoreHole / TestPit; linked from the hole's `ground_model_id` |
 
 ### GroundLayer
+A depth band within a GroundModel. A layer can contain **several** soil types —
+express that as one row per (layer, soil) sharing the same layer `id`, each with a
+different `soil_unit_no`; the upsert MERGEs the SoilType by `unit_no` and accumulates
+the `OF_MATERIAL` edges, so the relationship is always created on layer-add.
 | property | type | unit | notes |
 |---|---|---|---|
-| id | string (unique) | | `<model>-L<n>` |
-| order | int | | layer sequence from surface (1, 2, …) |
+| id | string (unique) | | layer id, e.g. `A1` |
+| ground_model_id | string | | FK -> GroundModel |
+| soil_unit_no | string | | FK -> SoilType (matched on `unit_no`); repeat rows for multiple soils |
 | start_depth | float | mbgl | |
 | end_depth | float | mbgl | |
-| condition | string | | `Firm` \| `Stiff` \| `VeryStiff` \| `Hard` \| `Dense` \| `VeryDense` |
 
 ### ThermalResistivityTest
 | property | type | unit |

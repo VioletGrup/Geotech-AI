@@ -103,6 +103,9 @@ def upsert_borehole():
     WITH b
     OPTIONAL MATCH (z:Zone {id: $zone_id})
     FOREACH (_ IN CASE WHEN z IS NULL THEN [] ELSE [1] END | MERGE (b)-[:LOCATED_IN]->(z))
+    FOREACH (_ IN CASE WHEN $ground_model_id IS NULL THEN [] ELSE [1] END |
+        MERGE (g:GroundModel {id: $ground_model_id})
+        MERGE (b)-[:HAS_GROUND_MODEL]->(g))
     RETURN b
     """
 
@@ -115,6 +118,9 @@ def upsert_testpit():
     WITH t
     OPTIONAL MATCH (z:Zone {id: $zone_id})
     FOREACH (_ IN CASE WHEN z IS NULL THEN [] ELSE [1] END | MERGE (t)-[:LOCATED_IN]->(z))
+    FOREACH (_ IN CASE WHEN $ground_model_id IS NULL THEN [] ELSE [1] END |
+        MERGE (g:GroundModel {id: $ground_model_id})
+        MERGE (t)-[:HAS_GROUND_MODEL]->(g))
     RETURN t
     """
 
@@ -122,7 +128,7 @@ def upsert_testpit():
 
 def upsert_soil_type():
     return """
-    MERGE (s:SoilType {unit_name: $unit_name})
+    MERGE (s:SoilType {unit_no: $unit_no})
     SET s += $props
     RETURN s
     """
@@ -132,13 +138,12 @@ def upsert_soil_type():
 def upsert_ground_model():
     return """
     MERGE (g:GroundModel {id: $id})
-    WITH g
-    OPTIONAL MATCH (loc {id: $location_id}) WHERE loc:BoreHole OR loc:TestPit
-    FOREACH (_ IN CASE WHEN loc IS NULL THEN [] ELSE [1] END | MERGE (loc)-[:HAS_GROUND_MODEL]->(g))
     RETURN g
     """
 
 # ── GroundLayer — HAS_LAYER from GroundModel, OF_MATERIAL to SoilType ──────────
+# A layer can hold several soils: submit one row per (layer, soil) sharing the
+# same layer id; each call MERGEs the same layer and adds one OF_MATERIAL edge.
 
 def upsert_ground_layer():
     return """
@@ -147,8 +152,10 @@ def upsert_ground_layer():
     SET l += $props
     MERGE (g)-[:HAS_LAYER]->(l)
     WITH l
-    OPTIONAL MATCH (s:SoilType {unit_name: $soil_unit_name})
-    FOREACH (_ IN CASE WHEN s IS NULL THEN [] ELSE [1] END | MERGE (l)-[:OF_MATERIAL]->(s))
+    FOREACH (_ IN CASE WHEN $soil_unit_no IS NULL THEN [] ELSE [1] END |
+        MERGE (s:SoilType {unit_no: $soil_unit_no})
+        MERGE (l)-[:OF_MATERIAL]->(s)
+    )
     RETURN l
     """
 
@@ -172,7 +179,7 @@ def upsert_lab_test():
     SET t += $props
     MERGE (loc)-[:HAS_LAB_TEST]->(t)
     WITH t
-    OPTIONAL MATCH (s:SoilType {unit_name: $soil_unit_name})
+    OPTIONAL MATCH (s:SoilType {unit_no: $soil_unit_no})
     FOREACH (_ IN CASE WHEN s IS NULL THEN [] ELSE [1] END | MERGE (t)-[:OF_MATERIAL]->(s))
     RETURN t
     """

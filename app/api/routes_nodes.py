@@ -99,6 +99,7 @@ class DPSHTest(BaseModel):
 class BoreHole(BaseModel):
     id: str
     zone_id: Optional[str] = None            # FK -> Zone
+    ground_model_id: Optional[str] = None    # FK -> GroundModel
     series: Optional[str] = None
     elevation: Optional[float] = None
     total_depth: Optional[float] = None
@@ -107,25 +108,25 @@ class BoreHole(BaseModel):
 class TestPit(BaseModel):
     id: str
     zone_id: Optional[str] = None            # FK -> Zone
+    ground_model_id: Optional[str] = None    # FK -> GroundModel
     elevation: Optional[float] = None
     total_depth: Optional[float] = None
 
 class SoilType(BaseModel):
-    unit_name: str
+    unit_no: str
+    origin: Optional[str] = None
+    unit_name: Optional[str] = None
     description: Optional[str] = None
 
 class GroundModel(BaseModel):
     id: str
-    location_id: Optional[str] = None        # FK -> BoreHole | TestPit
 
 class GroundLayer(BaseModel):
     id: str
     ground_model_id: str                     # FK -> GroundModel (required)
-    soil_unit_name: Optional[str] = None     # FK -> SoilType
-    order: Optional[int] = None
+    soil_unit_no: Optional[str] = None       # FK -> SoilType (by unit_name); one row per soil
     start_depth: Optional[float] = None
     end_depth: Optional[float] = None
-    condition: Optional[str] = None
 
 class ThermalResistivityTest(BaseModel):
     id: str
@@ -137,7 +138,7 @@ class ThermalResistivityTest(BaseModel):
 class LaboratoryTest(BaseModel):
     id: str
     location_id: str                         # FK -> BoreHole | TestPit (required)
-    soil_unit_name: Optional[str] = None     # FK -> SoilType
+    soil_unit_no: Optional[str] = None       # FK -> SoilType (by unit_no)
     top_depth: Optional[float] = None
     bottom_depth: Optional[float] = None
     moisture_content: Optional[float] = None
@@ -214,12 +215,14 @@ def add_dpsh(body: DPSHTest):
 
 @router.post("/borehole", status_code=200)
 def add_borehole(body: BoreHole):
-    p = {"id": body.id, "zone_id": body.zone_id, "props": _props(body, drop=("id", "zone_id"))}
+    p = {"id": body.id, "zone_id": body.zone_id, "ground_model_id": body.ground_model_id,
+         "props": _props(body, drop=("id", "zone_id", "ground_model_id"))}
     return _one(queries.upsert_borehole(), p, "b", "BoreHole")
 
 @router.post("/testpit", status_code=200)
 def add_testpit(body: TestPit):
-    p = {"id": body.id, "zone_id": body.zone_id, "props": _props(body, drop=("id", "zone_id"))}
+    p = {"id": body.id, "zone_id": body.zone_id, "ground_model_id": body.ground_model_id,
+         "props": _props(body, drop=("id", "zone_id", "ground_model_id"))}
     return _one(queries.upsert_testpit(), p, "t", "TestPit")
 
 # Tests
@@ -251,8 +254,8 @@ def add_thermal_test(body: ThermalResistivityTest):
 
 @router.post("/lab-test", status_code=200)
 def add_lab_test(body: LaboratoryTest):
-    p = {"id": body.id, "location_id": body.location_id, "soil_unit_name": body.soil_unit_name,
-         "props": _props(body, drop=("id", "location_id", "soil_unit_name"))}
+    p = {"id": body.id, "location_id": body.location_id, "soil_unit_no": body.soil_unit_no,
+         "props": _props(body, drop=("id", "location_id", "soil_unit_no"))}
     return _one(queries.upsert_lab_test(), p, "t", "LaboratoryTest")
 
 @router.post("/aggressivity", status_code=200)
@@ -263,19 +266,19 @@ def add_aggressivity(body: SoilAggressivity):
 # Ground model
 @router.post("/soil-type", status_code=200)
 def add_soil_type(body: SoilType):
-    p = {"id": body.unit_name, "unit_name": body.unit_name, "props": _props(body, drop=("unit_name",))}
-    result = run_query(queries.upsert_soil_type(), {"unit_name": body.unit_name, "props": p["props"]})
-    return {"message": f"SoilType '{body.unit_name}' saved", "node": dict(result[0]["s"])}
+    result = run_query(queries.upsert_soil_type(),
+                       {"unit_no": body.unit_no, "props": _props(body, drop=("unit_no",))})
+    return {"message": f"SoilType '{body.unit_no}' saved", "node": dict(result[0]["s"])}
 
 @router.post("/ground-model", status_code=200)
 def add_ground_model(body: GroundModel):
-    p = {"id": body.id, "location_id": body.location_id}
+    p = {"id": body.id}
     return _one(queries.upsert_ground_model(), p, "g", "GroundModel")
 
 @router.post("/ground-layer", status_code=200)
 def add_ground_layer(body: GroundLayer):
-    p = {"id": body.id, "ground_model_id": body.ground_model_id, "soil_unit_name": body.soil_unit_name,
-         "props": _props(body, drop=("id", "ground_model_id", "soil_unit_name"))}
+    p = {"id": body.id, "ground_model_id": body.ground_model_id, "soil_unit_no": body.soil_unit_no,
+         "props": _props(body, drop=("id", "ground_model_id", "soil_unit_no"))}
     return _one(queries.upsert_ground_layer(), p, "l", "GroundLayer")
 
 

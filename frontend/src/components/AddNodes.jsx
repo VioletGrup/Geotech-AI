@@ -49,23 +49,24 @@ const SCHEMA = {
   ],
   borehole: [
     ["id", "text", { req: true }], ["zone_id", "text", { fk: true }],
+    ["ground_model_id", "text", { fk: true }],
     ["series", "text"], ["elevation", "num"], ["total_depth", "num"], ["groundwater_depth", "num"],
   ],
   testpit: [
     ["id", "text", { req: true }], ["zone_id", "text", { fk: true }],
+    ["ground_model_id", "text", { fk: true }],
     ["elevation", "num"], ["total_depth", "num"],
   ],
   "soil-type": [
-    ["unit_name", "text", { req: true }], ["description", "text"],
+    ["unit_no", "text", { req: true }], ["origin", "text"],
+    ["unit_name", "text"], ["description", "text"],
   ],
   "ground-model": [
-    ["id", "text", { req: true }], ["location_id", "text", { fk: true }],
+    ["id", "text", { req: true }],
   ],
   "ground-layer": [
     ["id", "text", { req: true }], ["ground_model_id", "text", { fk: true, req: true }],
-    ["soil_unit_name", "text", { fk: true }], ["order", "int"],
-    ["start_depth", "num"], ["end_depth", "num"],
-    ["condition", "select", { choices: ["", "Firm", "Stiff", "VeryStiff", "Hard", "Dense", "VeryDense"] }],
+    ["soil_unit_no", "text", { fk: true }], ["start_depth", "num"], ["end_depth", "num"],
   ],
   "thermal-test": [
     ["id", "text", { req: true }], ["testpit_id", "text", { fk: true, req: true }],
@@ -73,7 +74,7 @@ const SCHEMA = {
   ],
   "lab-test": [
     ["id", "text", { req: true }], ["location_id", "text", { fk: true, req: true }],
-    ["soil_unit_name", "text", { fk: true }],
+    ["soil_unit_no", "text", { fk: true }],
     ["top_depth", "num"], ["bottom_depth", "num"], ["moisture_content", "num"],
     ["liquid_limit", "num"], ["plastic_limit", "num"], ["plasticity_index", "num"],
     ["linear_shrinkage", "num"], ["emerson_class", "int"], ["iss", "num"],
