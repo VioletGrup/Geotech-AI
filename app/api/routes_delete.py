@@ -89,7 +89,7 @@ def delete_site(site_id: str):
 
     # ── 2. PileTest containers ────────────────────────────────────────────────
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         MATCH (loc:PileTestLocation)-[:LOCATED_IN]->(z)
         MATCH (loc)-[:HAS_TEST]->(pt:PileTest)
         DETACH DELETE pt RETURN count(pt) AS n
@@ -98,7 +98,7 @@ def delete_site(site_id: str):
 
     # ── 3. PileTestLocation ───────────────────────────────────────────────────
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         MATCH (loc:PileTestLocation)-[:LOCATED_IN]->(z)
         DETACH DELETE loc RETURN count(loc) AS n
     """, {"sid": site_id})
@@ -122,7 +122,7 @@ def delete_site(site_id: str):
     # A GroundModel is exclusive to this site when every HAS_GROUND_MODEL
     # relationship points to a BoreHole/TestPit inside this site's zones.
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         MATCH (loc)-[:LOCATED_IN]->(z)-[:HAS_ZONE]-(s)
             WHERE loc:BoreHole OR loc:TestPit
         MATCH (loc)-[:HAS_GROUND_MODEL]->(gm:GroundModel)
@@ -138,7 +138,7 @@ def delete_site(site_id: str):
 
     # ── 6. Exclusive GroundModels ─────────────────────────────────────────────
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         MATCH (loc)-[:LOCATED_IN]->(z) WHERE loc:BoreHole OR loc:TestPit
         MATCH (loc)-[:HAS_GROUND_MODEL]->(gm:GroundModel)
         WHERE NOT EXISTS {
@@ -151,7 +151,7 @@ def delete_site(site_id: str):
 
     # ── 7. DPSH probes ────────────────────────────────────────────────────────
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         MATCH (d:DPSHTest)-[:LOCATED_IN]->(z)
         DETACH DELETE d RETURN count(d) AS n
     """, {"sid": site_id})
@@ -159,7 +159,7 @@ def delete_site(site_id: str):
 
     # ── 8. BoreHoles ─────────────────────────────────────────────────────────
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         MATCH (b:BoreHole)-[:LOCATED_IN]->(z)
         DETACH DELETE b RETURN count(b) AS n
     """, {"sid": site_id})
@@ -167,7 +167,7 @@ def delete_site(site_id: str):
 
     # ── 9. TestPits ───────────────────────────────────────────────────────────
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         MATCH (tp:TestPit)-[:LOCATED_IN]->(z)
         DETACH DELETE tp RETURN count(tp) AS n
     """, {"sid": site_id})
@@ -175,7 +175,7 @@ def delete_site(site_id: str):
 
     # ── 10. Zones ─────────────────────────────────────────────────────────────
     r = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         DETACH DELETE z RETURN count(z) AS n
     """, {"sid": site_id})
     deleted["Zone"] = r[0]["n"] if r else 0
@@ -195,7 +195,7 @@ def delete_site(site_id: str):
 def list_zones(site_id: str):
     """Return all zones for a site with their pre_drill_decision."""
     rows = _run("""
-        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {site_id: $sid})
         RETURN z.id AS zone_id, z.name AS name,
                z.pre_drill_decision AS decision,
                z.trackers_4string  AS t4,

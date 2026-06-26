@@ -1,12 +1,130 @@
 import React, { useRef, useEffect, useState } from "react";
 import { api } from "../api.js";
 
+// ── confidence bar ────────────────────────────────────────────────────────────
+function ConfidenceBar({ value }) {
+  if (value == null) return null;
+  const color = value >= 80 ? "#1D9E75"
+              : value >= 50 ? "#f2c300"
+              :               "#f87171";
+  const label = value >= 80 ? "High" : value >= 50 ? "Medium" : "Low";
+  return (
+    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.1)", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: `${value}%`, borderRadius: 2,
+          background: color, transition: "width .6s ease",
+        }}/>
+      </div>
+      <span style={{ fontSize: 11, color, minWidth: 64, fontWeight: 500 }}>
+        {label} ({value}%)
+      </span>
+    </div>
+  );
+}
+
+// ── reasoning toggle ──────────────────────────────────────────────────────────
+function ReasoningToggle({ text }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: "none", border: "none", cursor: "pointer", padding: 0,
+          display: "flex", alignItems: "center", gap: 5,
+          color: "rgba(255,255,255,0.45)", fontSize: 11,
+        }}
+      >
+        <span style={{
+          display: "inline-block", transition: "transform .2s",
+          transform: open ? "rotate(180deg)" : "rotate(0deg)", lineHeight: 1,
+        }}>▾</span>
+        {open ? "Hide reasoning" : "Show reasoning"}
+      </button>
+      {open && (
+        <div style={{
+          marginTop: 6, padding: "8px 10px",
+          background: "rgba(0,0,0,0.25)", borderRadius: 6,
+          fontSize: 12, color: "rgba(255,255,255,0.6)",
+          lineHeight: 1.6, fontStyle: "italic",
+          borderLeft: "2px solid rgba(242,195,0,0.3)",
+        }}>
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── message bubble ────────────────────────────────────────────────────────────
+function Bubble({ m }) {
+  const isUser = m.role === "user";
+  if (isUser) {
+    return (
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+        <div style={{
+          maxWidth: "72%", padding: "10px 14px",
+          borderRadius: "18px 18px 4px 18px",
+          background: "var(--pcl-gold)", color: "#050608",
+          fontSize: 13, lineHeight: 1.6, wordBreak: "break-word",
+        }}>
+          {m.text}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 6 }}>
+      <div style={{
+        maxWidth: "76%", padding: "10px 14px",
+        borderRadius: "18px 18px 18px 4px",
+        background: m.err ? "var(--bg-danger)" : "var(--surface-2)",
+        border: `1px solid ${m.err ? "var(--border-danger)" : "var(--border-strong)"}`,
+        fontSize: 13, lineHeight: 1.6, color: m.err ? "var(--text-danger)" : "var(--text-primary)",
+        wordBreak: "break-word",
+      }}>
+        <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+        {!m.err && (
+          <>
+            <ConfidenceBar value={m.confidence} />
+            <ReasoningToggle text={m.reasoning} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── typing indicator ──────────────────────────────────────────────────────────
+function Typing() {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 6 }}>
+      <div style={{
+        padding: "10px 16px", borderRadius: "18px 18px 18px 4px",
+        background: "var(--surface-2)", border: "1px solid var(--border-strong)",
+        display: "flex", gap: 5, alignItems: "center",
+      }}>
+        {[0, 1, 2].map(i => (
+          <span key={i} style={{
+            width: 6, height: 6, borderRadius: "50%",
+            background: "var(--text-muted)", display: "inline-block",
+            animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+          }}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── main ──────────────────────────────────────────────────────────────────────
 export default function Copilot() {
   const [messages, setMessages] = useState([]);
   const [input,    setInput]    = useState("");
   const [busy,     setBusy]     = useState(false);
   const bottomRef = useRef(null);
-  const textareaRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -20,7 +138,12 @@ export default function Copilot() {
     setBusy(true);
     try {
       const res = await api.chat(q);
-      setMessages(m => [...m, { role: "bot", text: res.reply }]);
+      setMessages(m => [...m, {
+        role:       "bot",
+        text:       res.reply,
+        confidence: res.confidence,
+        reasoning:  res.reasoning,
+      }]);
     } catch(e) {
       setMessages(m => [...m, { role: "bot", text: `Error: ${e.message}`, err: true }]);
     } finally { setBusy(false); }
@@ -30,106 +153,63 @@ export default function Copilot() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   }
 
-  function formatTime() {
-    return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 120px)"}}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)" }}>
 
       {/* message list */}
-      <div style={{flex:1,overflowY:"auto",padding:"16px 20px",
-        display:"flex",flexDirection:"column",gap:4}}>
-
+      <div style={{
+        flex: 1, overflowY: "auto", padding: "16px 20px",
+        display: "flex", flexDirection: "column",
+      }}>
         {messages.length === 0 && (
-          <div style={{margin:"auto",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>
-            <div style={{fontSize:32,marginBottom:12}}>⛏</div>
+          <div style={{ margin: "auto", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⛏</div>
             Ask about zones, piles, DPSH refusal, ground profiles, or pile test results.
           </div>
         )}
-
-        {messages.map((m, i) => {
-          const isUser = m.role === "user";
-          return (
-            <div key={i} style={{display:"flex",flexDirection:"column",
-              alignItems:isUser?"flex-end":"flex-start",marginBottom:2}}>
-              {/* bubble */}
-              <div style={{
-                maxWidth:"72%",
-                padding:"10px 14px",
-                borderRadius:isUser?"18px 18px 4px 18px":"18px 18px 18px 4px",
-                background:isUser
-                  ? "var(--pcl-gold)"
-                  : m.err ? "var(--bg-danger)" : "var(--surface-2)",
-                color:isUser
-                  ? "#050608"
-                  : m.err ? "var(--text-danger)" : "var(--text-primary)",
-                border:isUser
-                  ? "none"
-                  : `1px solid ${m.err?"var(--border-danger)":"var(--border-strong)"}`,
-                fontSize:13,
-                lineHeight:1.6,
-                whiteSpace:"pre-wrap",
-                wordBreak:"break-word",
-              }}>
-                {m.text}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* typing indicator */}
-        {busy && (
-          <div style={{display:"flex",alignItems:"flex-start",marginBottom:2}}>
-            <div style={{padding:"10px 16px",borderRadius:"18px 18px 18px 4px",
-              background:"var(--surface-2)",border:"1px solid var(--border-strong)",
-              display:"flex",gap:5,alignItems:"center"}}>
-              {[0,1,2].map(i=>(
-                <span key={i} style={{width:6,height:6,borderRadius:"50%",
-                  background:"var(--text-muted)",display:"inline-block",
-                  animation:`bounce 1.2s ease-in-out ${i*0.2}s infinite`}}/>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div ref={bottomRef}/>
+        {messages.map((m, i) => <Bubble key={i} m={m} />)}
+        {busy && <Typing />}
+        <div ref={bottomRef} />
       </div>
 
       {/* composer */}
-      <div style={{borderTop:"1px solid var(--border)",padding:"12px 16px",
-        background:"var(--surface-1)",display:"flex",gap:10,alignItems:"flex-end"}}>
+      <div style={{
+        borderTop: "1px solid var(--border)", padding: "12px 16px",
+        background: "var(--surface-1)", display: "flex", gap: 10, alignItems: "flex-end",
+      }}>
         <textarea
-          ref={textareaRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKey}
           placeholder="Message the advisor…"
           rows={1}
-          style={{flex:1,minHeight:40,maxHeight:140,resize:"none",
-            background:"var(--surface-2)",border:"1px solid var(--border-strong)",
-            borderRadius:20,color:"var(--text-primary)",padding:"10px 16px",
-            fontSize:13,fontFamily:"inherit",lineHeight:1.5,outline:"none",
-            transition:"border-color .12s",}}
-          onFocus={e=>e.target.style.borderColor="var(--border-accent)"}
-          onBlur={e=>e.target.style.borderColor="var(--border-strong)"}
+          style={{
+            flex: 1, minHeight: 40, maxHeight: 140, resize: "none",
+            background: "var(--surface-2)", border: "1px solid var(--border-strong)",
+            borderRadius: 20, color: "var(--text-primary)", padding: "10px 16px",
+            fontSize: 13, fontFamily: "inherit", lineHeight: 1.5, outline: "none",
+          }}
+          onFocus={e => e.target.style.borderColor = "var(--border-accent)"}
+          onBlur={e  => e.target.style.borderColor = "var(--border-strong)"}
         />
         <button
           disabled={busy || !input.trim()}
           onClick={() => send()}
-          style={{width:40,height:40,borderRadius:"50%",border:"none",cursor:"pointer",
-            background:input.trim()&&!busy?"var(--pcl-gold)":"var(--border-strong)",
-            color:input.trim()&&!busy?"#050608":"var(--text-muted)",
-            display:"flex",alignItems:"center",justifyContent:"center",
-            flexShrink:0,fontSize:18,transition:"background .12s,color .12s"}}>
-          ▶
-        </button>
+          style={{
+            width: 40, height: 40, borderRadius: "50%", border: "none",
+            cursor: "pointer", flexShrink: 0, fontSize: 18,
+            background: input.trim() && !busy ? "var(--pcl-gold)" : "var(--border-strong)",
+            color:      input.trim() && !busy ? "#050608" : "var(--text-muted)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "background .12s, color .12s",
+          }}
+        >▶</button>
       </div>
 
       <style>{`
         @keyframes bounce {
-          0%,80%,100% { transform: translateY(0); opacity:.4; }
-          40%          { transform: translateY(-5px); opacity:1; }
+          0%,80%,100% { transform:translateY(0); opacity:.4; }
+          40%          { transform:translateY(-5px); opacity:1; }
         }
       `}</style>
     </div>

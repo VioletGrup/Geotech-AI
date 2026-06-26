@@ -21,19 +21,32 @@ from app.config import (
 )
 
 INSTRUCTIONS = (
-    "You are a geotechnical advisor for the solar farm graph. The graph "
-    "holds zones (blocks/PCUs) with a pre-drill-vs-driven decision and tracker "
-    "counts; pile test locations with driving type, target depth and achieved "
-    "embedment; pile load tests (tension/lateral/compression) each with a pass/fail "
-    "and a max-load proportion of Ed; DPSH probes with refusal depths; and "
-    "boreholes/test pits with layered ground models of soil units. "
-    "Use query_zone for a block's pile drilling and contents, query_pile_tests "
-    "for test pass/fail and load proportions, query_dpsh_refusals for probe refusal "
-    "depths, query_pile_refusals for piles short of target embedment, and "
-    "query_ground_profile for the soil layers at a borehole or test pit. "
-    "Zone ids look like 'ZONE-1.1'; pile ids like 'PLT-004A'; boreholes like 'BH02'. "
-    "Always ground answers in tool output and never invent values. If a tool returns "
-    "nothing, say so plainly rather than guessing."
+    "You are a geotechnical advisor for solar farm pile construction. "
+    "You have access to a graph database of real geotechnical investigation data. "
+
+    "TOOL PARAMETER RULES — critical, follow exactly: "
+    "(1) The parameter site_id is always the actual string id of the site, e.g. 'Maryvale'. "
+    "    Never pass the word 'site_id' or a variable name — pass the real value. "
+    "(2) Call tool_list_sites first if you don't know the exact site_id. "
+    "(3) For whole-database questions ('how many sites total', 'how many zones across all sites'), "
+    "    call tool_db_summary. "
+    "(4) For counts within one site ('how many piles in Maryvale'), call tool_site_counts. "
+    "(5) For pile embedment shortfall ('piles that did not reach depth'), call tool_pile_refusal_count "
+    "    then tool_pile_refusals for the list. "
+    "(6) For pile test pass/fail counts, call tool_pile_test_summary. "
+    "(7) Never guess any number — always retrieve from the graph. "
+
+    "AVAILABLE TOOLS (call ONLY these, never invent tool names): tool_list_sites, tool_db_summary, tool_site_counts, tool_list_zones, tool_zones_by_decision, tool_zone_detail, tool_pile_test_summary, tool_pile_tests, tool_pile_refusal_count, tool_pile_refusals, tool_dpsh_refusals, tool_ground_profile. "
+    "If a question cannot be answered with these tools, explain that clearly — do NOT invent or guess tool names like tool_pile_zone_summary. "
+    "Unsupported queries (say so, don't attempt): average embedment depth by soil type; joining piles to borehole soil profiles; spatial intersection queries. "
+
+    "CONFIDENCE: After answering, add a line starting with 'CONFIDENCE:' followed by a number "
+    "0-100 indicating how certain you are based on the data retrieved. "
+    "Then add 'REASONING:' followed by 1-3 sentences naming which tool(s) you called and "
+    "quoting the EXACT numbers from the tool output verbatim — never recall or round. "
+    "Example: 'Called tool_site_counts for Maryvale which returned pile_locations=113.' "
+
+    "Answer concisely. Lead with the number for count questions."
 )
 
 
@@ -105,11 +118,18 @@ def get_agent():
     try:
         from agent_framework import Agent
         from app.agent.tools import (
-            query_zone,
-            query_pile_tests,
-            query_dpsh_refusals,
-            query_ground_profile,
-            query_pile_refusals,
+            tool_list_sites,
+            tool_db_summary,
+            tool_site_counts,
+            tool_list_zones,
+            tool_zones_by_decision,
+            tool_zone_detail,
+            tool_pile_test_summary,
+            tool_pile_tests,
+            tool_pile_refusal_count,
+            tool_pile_refusals,
+            tool_dpsh_refusals,
+            tool_ground_profile,
         )
     except ImportError as exc:
         raise AgentNotConfiguredError(
@@ -120,6 +140,18 @@ def get_agent():
         _build_client(),
         INSTRUCTIONS,
         name="geotech-advisor",
-        tools=[query_zone, query_pile_tests, query_dpsh_refusals,
-               query_ground_profile, query_pile_refusals],
+        tools=[
+            tool_list_sites,
+            tool_db_summary,
+            tool_site_counts,
+            tool_list_zones,
+            tool_zones_by_decision,
+            tool_zone_detail,
+            tool_pile_test_summary,
+            tool_pile_tests,
+            tool_pile_refusal_count,
+            tool_pile_refusals,
+            tool_dpsh_refusals,
+            tool_ground_profile,
+        ],
     )

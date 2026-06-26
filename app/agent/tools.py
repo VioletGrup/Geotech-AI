@@ -1,74 +1,203 @@
+"""
+tools.py  —  Copilot agent tools (schema v3, site-scoped).
+
+Discovery workflow the LLM must follow:
+  1. tool_list_sites         — find site_id when user mentions a site by name
+  2. tool_db_summary         — answer whole-database count questions
+  3. tool_site_counts        — answer "how many X in site Y" questions
+  4. tool_list_zones         — discover zone ids before drilling into one
+  5. tool_zones_by_decision  — list pre-drill or driven zones
+  6. tool_zone_detail        — full detail on one zone
+  7. tool_pile_test_summary  — pass/fail counts
+  8. tool_pile_tests         — individual test rows
+  9. tool_pile_refusal_count — how many piles short of embedment (with stats)
+ 10. tool_pile_refusals      — individual refusal rows
+ 11. tool_dpsh_refusals      — DPSH probe refusal depths
+ 12. tool_ground_profile     — soil layers at a borehole or test pit
+"""
 from typing import Annotated, Optional
 
 from pydantic import Field
 from agent_framework import tool
 
 from app.graphrag.retrieve import (
+    list_sites,
+    get_db_summary,
+    get_site_counts,
+    list_zones,
+    get_zones_by_decision,
     get_zone_summary,
+    get_pile_test_summary,
     get_pile_tests,
+    get_pile_refusal_count,
+    get_pile_refusals,
     get_dpsh_refusals,
     get_ground_profile,
-    get_pile_refusals,
 )
 
 
-@tool(
-    description="Summarise a zone (block/PCU): its pre-drill-vs-driven decision, "
-    "tracker counts, and how many pile locations, DPSH probes, boreholes and test "
-    "pits sit in it. Pass the full zone id, e.g. 'ZONE-1.1'."
-)
-def query_zone(
-    zone_id: Annotated[str, Field(description="Zone id, e.g. 'ZONE-1.1'")],
+# ── Discovery ──────────────────────────────────────────────────────────────────
+
+@tool(description=(
+    "List every site in the graph with its name, id, status and zone count. "
+    "Call this first whenever the user mentions a site by name to get the correct site_id."
+))
+def tool_list_sites() -> dict:
+    rows = list_sites()
+    return {"n_sites": len(rows), "sites": rows}
+
+
+@tool(description=(
+    "Return total counts across the entire database: sites, zones, pile locations, "
+    "DPSH probes, boreholes, test pits. "
+    "Use for questions like 'how many sites are in the database', "
+    "'how many zones in total', 'how many piles in the graph'."
+))
+def tool_db_summary() -> dict:
+    return get_db_summary()
+
+
+@tool(description=(
+    "Return counts for a single site: zones, pile locations, pile tests, DPSH probes, "
+    "boreholes, test pits. "
+    "Use for 'how many zones in Maryvale', 'how many piles in site X'. "
+    "IMPORTANT: site_id is the id value of the site (e.g. 'Maryvale'), NOT the word 'site_id'."
+))
+def tool_site_counts(
+    site_id: Annotated[str, Field(description="The site's id value e.g. 'Maryvale' or 'SITE-001'. Always a string like the site name.")],
 ) -> dict:
-    rows = get_zone_summary(zone_id)
-    return {"zone": zone_id, "found": bool(rows), "summary": rows[0] if rows else None}
+    return get_site_counts(site_id)
 
 
-@tool(
-    description="List pile load tests with their pass/fail result and the per-type "
-    "load proportions (tension/lateral/compression, % of Ed). Filter by zone id "
-    "and/or pass status. Use passed=false to find failures."
-)
-def query_pile_tests(
-    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by, e.g. 'ZONE-13.1'")] = None,
-    passed: Annotated[Optional[bool], Field(description="True for passed, False for failed tests")] = None,
-    top_k: Annotated[int, Field(description="Max rows", ge=1, le=200)] = 25,
+@tool(description=(
+    "List all zones in a site with their pre-drill/driven decision and content counts. "
+    "Use this to discover zone ids before querying a specific zone."
+))
+def tool_list_zones(
+    site_id: Annotated[str, Field(description="Site id")],
 ) -> dict:
-    rows = get_pile_tests(zone_id=zone_id, passed=passed, top_k=top_k)
-    return {"n": len(rows), "results": rows}
+    rows = list_zones(site_id)
+    n_pre  = sum(1 for r in rows if r.get("decision") == "Pre-Drill")
+    n_driv = sum(1 for r in rows if r.get("decision") == "Driven")
+    n_und  = sum(1 for r in rows if not r.get("decision"))
+    return {"n_zones": len(rows), "pre_drill": n_pre,
+            "driven": n_driv, "undecided": n_und, "zones": rows}
 
 
-@tool(
-    description="Return DPSH probe refusal depths (m), optionally filtered to a zone "
-    "or to shallow refusals (max_depth). Shallow refusal drives the pile drilling."
-)
-def query_dpsh_refusals(
+@tool(description=(
+    "Return all zones with a given pre-drill/driven decision, or all undecided zones. "
+    "decision = 'Pre-Drill', 'Driven', or null for undecided."
+))
+def tool_zones_by_decision(
+    site_id:  Annotated[str, Field(description="Site id")],
+    decision: Annotated[Optional[str], Field(
+        description="'Pre-Drill', 'Driven', or null for zones without a decision"
+    )] = None,
+) -> dict:
+    rows = get_zones_by_decision(site_id, decision)
+    return {"n": len(rows), "decision": decision, "zones": rows}
+
+
+@tool(description=(
+    "Return full detail for a single zone: decision, tracker counts, and counts of "
+    "pile locations, pile tests, DPSH probes, boreholes, test pits."
+))
+def tool_zone_detail(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[str, Field(description="Zone id, e.g. '1.1'")],
+) -> dict:
+    data = get_zone_summary(site_id, zone_id)
+    return {"found": bool(data), "summary": data}
+
+
+# ── Pile tests ─────────────────────────────────────────────────────────────────
+
+@tool(description=(
+    "Return a summary count of pile load tests for a site or zone: "
+    "total, passed, failed, undecided. "
+    "Use for 'how many pile tests passed in site X', 'how many failed in zone 1.1'."
+))
+def tool_pile_test_summary(
+    site_id: Annotated[str, Field(description="Site id")],
     zone_id: Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
-    max_depth: Annotated[Optional[float], Field(description="Only refusals at or above this depth (m)")] = None,
-    top_k: Annotated[int, Field(description="Max rows", ge=1, le=200)] = 50,
 ) -> dict:
-    rows = get_dpsh_refusals(zone_id=zone_id, max_depth=max_depth, top_k=top_k)
+    return get_pile_test_summary(site_id, zone_id)
+
+
+@tool(description=(
+    "Return individual pile load test rows with pass/fail and load proportions "
+    "(tension / lateral / compression as % of Ed). "
+    "Filter by zone and/or pass status. Use passed=false to list failures."
+))
+def tool_pile_tests(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
+    passed:  Annotated[Optional[bool], Field(
+        description="true = passed only, false = failed only, omit for all"
+    )] = None,
+    top_k:   Annotated[int, Field(description="Max rows to return", ge=1, le=200)] = 25,
+) -> dict:
+    rows = get_pile_tests(site_id, zone_id=zone_id, passed=passed, top_k=top_k)
     return {"n": len(rows), "results": rows}
 
 
-@tool(
-    description="Return the layered ground profile (soil units by depth) for a "
-    "borehole or test pit, from its ground model. Pass the location id, e.g. 'BH02' or 'TP05'."
-)
-def query_ground_profile(
+# ── Pile embedment refusal ─────────────────────────────────────────────────────
+
+@tool(description=(
+    "Return the COUNT of piles that did not reach their target embedment depth, "
+    "plus average and maximum shortfall in metres. "
+    "Use for 'how many piles in Maryvale did not reach their embedment depth', "
+    "'how many piles fell short in zone 3.2'."
+))
+def tool_pile_refusal_count(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
+) -> dict:
+    return get_pile_refusal_count(site_id, zone_id)
+
+
+@tool(description=(
+    "List individual piles that did not reach their target embedment depth, "
+    "with the shortfall (m) for each. Sorted worst-first. "
+    "Use after tool_pile_refusal_count to get the actual pile ids."
+))
+def tool_pile_refusals(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
+    top_k:   Annotated[int, Field(description="Max rows", ge=1, le=200)] = 50,
+) -> dict:
+    rows = get_pile_refusals(site_id, zone_id=zone_id, top_k=top_k)
+    return {"n": len(rows), "results": rows}
+
+
+# ── DPSH ───────────────────────────────────────────────────────────────────────
+
+@tool(description=(
+    "Return DPSH probe refusal depths (m) across a site or zone. "
+    "Filter with max_depth to surface only the shallow refusals that influence "
+    "pre-drill decisions. Sorted shallowest-first."
+))
+def tool_dpsh_refusals(
+    site_id:   Annotated[str, Field(description="Site id")],
+    zone_id:   Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
+    max_depth: Annotated[Optional[float], Field(
+        description="Only include refusals at or above this depth (m)"
+    )] = None,
+    top_k:     Annotated[int, Field(description="Max rows", ge=1, le=200)] = 50,
+) -> dict:
+    rows = get_dpsh_refusals(site_id, zone_id=zone_id, max_depth=max_depth, top_k=top_k)
+    return {"n": len(rows), "results": rows}
+
+
+# ── Ground profile ─────────────────────────────────────────────────────────────
+
+@tool(description=(
+    "Return the layered ground profile (soil units by depth) for a borehole or "
+    "test pit. Pass its id, e.g. 'BH02' or 'TP05'."
+))
+def tool_ground_profile(
+    site_id:     Annotated[str, Field(description="Site id")],
     location_id: Annotated[str, Field(description="BoreHole or TestPit id, e.g. 'BH02'")],
 ) -> dict:
-    rows = get_ground_profile(location_id)
+    rows = get_ground_profile(site_id, location_id)
     return {"location": location_id, "n_layers": len(rows), "layers": rows}
-
-
-@tool(
-    description="List piles that hit refusal — achieved embedment below target depth — "
-    "with the shortfall (m). Optionally filter by zone."
-)
-def query_pile_refusals(
-    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
-    top_k: Annotated[int, Field(description="Max rows", ge=1, le=200)] = 50,
-) -> dict:
-    rows = get_pile_refusals(zone_id=zone_id, top_k=top_k)
-    return {"n": len(rows), "results": rows}
