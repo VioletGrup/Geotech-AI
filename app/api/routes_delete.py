@@ -49,7 +49,7 @@ def list_sites():
         OPTIONAL MATCH (d:DPSHTest)-[:LOCATED_IN]->(z)
         OPTIONAL MATCH (b:BoreHole)-[:LOCATED_IN]->(z)
         OPTIONAL MATCH (tp:TestPit)-[:LOCATED_IN]->(z)
-        RETURN s.id AS site_id, s.name AS name,
+        RETURN s.id AS site_id, s.name AS name, s.status AS status,
                count(DISTINCT z)  AS zones,
                count(DISTINCT p)  AS pile_locations,
                count(DISTINCT d)  AS dpsh_probes,
@@ -190,3 +190,45 @@ def delete_site(site_id: str):
         "deleted": deleted,
         "preserved": "SoilType nodes and any GroundModel shared with other sites are preserved.",
     }
+
+@router.get("/sites/{site_id}/zones")
+def list_zones(site_id: str):
+    """Return all zones for a site with their pre_drill_decision."""
+    rows = _run("""
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone)
+        RETURN z.id AS zone_id, z.name AS name,
+               z.pre_drill_decision AS decision,
+               z.trackers_4string  AS t4,
+               z.trackers_3string  AS t3,
+               z.trackers_2string  AS t2
+        ORDER BY z.id
+    """, {"sid": site_id})
+    return [r.data() for r in rows]
+
+
+@router.patch("/sites/{site_id}/zones/{zone_id}/decision")
+def set_zone_decision(site_id: str, zone_id: str, body: dict):
+    """Set the pre_drill_decision for a zone. body: {decision: 'Pre-Drill'|'Driven'|null}"""
+    decision = body.get("decision")
+    if decision not in ("Pre-Drill", "Driven", None):
+        from fastapi import HTTPException
+        raise HTTPException(400, "decision must be 'Pre-Drill', 'Driven', or null")
+    _run("""
+        MATCH (s:Site {id: $sid})-[:HAS_ZONE]->(z:Zone {id: $zid})
+        SET z.pre_drill_decision = $decision
+    """, {"sid": site_id, "zid": zone_id, "decision": decision})
+    return {"zone_id": zone_id, "decision": decision}
+
+
+@router.patch("/sites/{site_id}/status")
+def set_site_status(site_id: str, body: dict):
+    """Set the status of a site: 'completed' or 'new'."""
+    status = body.get("status")
+    if status not in ("completed", "new"):
+        from fastapi import HTTPException
+        raise HTTPException(400, "status must be 'completed' or 'new'")
+    _run("""
+        MATCH (s:Site {id: $sid})
+        SET s.status = $status
+    """, {"sid": site_id, "status": status})
+    return {"site_id": site_id, "status": status}

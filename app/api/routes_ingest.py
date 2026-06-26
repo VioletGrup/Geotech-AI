@@ -10,11 +10,11 @@ POST /ingest/import    accepts the final template xlsx and bulk-writes every
                        sheet to the graph via the existing /nodes bulk endpoints.
 """
 from __future__ import annotations
-import io, json, os, re, traceback
+import asyncio, io, json, os, re, threading, time, traceback, uuid
 from typing import List
 
 import openpyxl
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.ingestion.pdf_extractor import extract_pdf, tables_as_text
@@ -23,12 +23,17 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
+# ── cancellation registry ─────────────────────────────────────────────────────
+# Maps job_id → threading.Event.  Set the event to signal the worker to stop.
+_cancel_events: dict[str, threading.Event] = {}
+
 # ── LLM call (same env vars as agent.py, direct HTTP — no agent-framework) ───
 
-def _llm_extract(prompt: str) -> str:
-    """Call whichever LLM is configured and return the raw text response.
-    Retries once on 429 with a 65-second wait (Groq resets per minute)."""
-    import requests, time
+def _llm_extract(prompt: str, cancel: threading.Event | None = None) -> str:
+    """Call whichever LLM is configured.
+    Uses llama-3.1-8b-instant for Groq (131k tokens/min).
+    Checks cancel event between retries so cancellation is responsive."""
+    import requests
 
     groq_key = os.getenv("GROQ_API_KEY")
     gemini_key = os.getenv("GEMINI_API_KEY")
@@ -56,17 +61,24 @@ def _llm_extract(prompt: str) -> str:
         "max_tokens": 4096,
     }
 
-    for attempt in range(3):
+    wait = 15
+    for attempt in range(4):
+        if cancel and cancel.is_set():
+            raise RuntimeError("Cancelled")
         r = requests.post(url, headers=headers, json=body, timeout=90)
         if r.status_code == 429:
-            wait = 65 if attempt == 0 else 120
-            logger.warning("Rate limited by LLM API — waiting %ds before retry %d", wait, attempt + 1)
-            time.sleep(wait)
+            logger.warning("Rate limited — waiting %ds (attempt %d)", wait, attempt + 1)
+            # Sleep in 1s increments so cancel is checked frequently
+            for _ in range(wait):
+                if cancel and cancel.is_set():
+                    raise RuntimeError("Cancelled")
+                time.sleep(1)
+            wait = min(wait * 2, 120)
             continue
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
 
-    raise RuntimeError("LLM API rate limit exceeded after retries. Try again in a few minutes.")
+    raise RuntimeError("Rate limit — retries exhausted")
 
 
 def _parse_json(raw: str) -> dict | list:
@@ -326,71 +338,137 @@ def _save(wb) -> bytes:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.post("/extract")
-async def extract_pdfs(files: List[UploadFile] = File(...)):
+@router.delete("/extract/{job_id}")
+def cancel_extract(job_id: str):
+    """Signal a running extraction job to stop."""
+    ev = _cancel_events.get(job_id)
+    if ev:
+        ev.set()
+        return {"cancelled": True}
+    return {"cancelled": False}
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _run_extraction(files_data: list, cancel: threading.Event, job_id: str):
+    """Generator yielding SSE strings. Runs synchronously."""
+    file_plans = []
+    for filename, data in files_data:
+        extracted   = extract_pdf(data)
+        table_pages = [pg for pg in extracted["pages"] if pg.get("tables")]
+        if not table_pages:
+            yield _sse("warning", {"message": f"{filename}: no tables found, skipped"})
+            continue
+        CHUNK_PAGES = 6
+        chunks = [table_pages[i:i+CHUNK_PAGES] for i in range(0, len(table_pages), CHUNK_PAGES)]
+        file_plans.append((filename, chunks))
+
+    if not file_plans:
+        yield _sse("error", {"message": "No tables found in any uploaded PDF"})
+        return
+
+    total_chunks = sum(len(c) for _, c in file_plans)
+    yield _sse("start", {"total_chunks": total_chunks, "total_files": len(file_plans)})
+
+    done_chunks = 0
+    all_results, all_errors = [], []
+
+    for filename, chunks in file_plans:
+        if cancel.is_set():
+            yield _sse("cancelled", {"message": "Extraction cancelled"})
+            return
+        file_result: dict = {}
+
+        for ci, chunk in enumerate(chunks):
+            if cancel.is_set():
+                yield _sse("cancelled", {"message": "Extraction cancelled"})
+                return
+
+            label = f"{filename} (pp {chunk[0]['page']}\u2013{chunk[-1]['page']})"
+            yield _sse("chunk_start", {
+                "file": filename, "chunk": ci+1,
+                "done": done_chunks, "total": total_chunks, "label": label,
+            })
+
+            content = tables_as_text(chunk)[:8000]
+            if content.strip():
+                prompt = _extraction_prompt(label, content)
+                try:
+                    raw    = _llm_extract(prompt, cancel=cancel)
+                    parsed = _parse_json(raw)
+                    if isinstance(parsed, dict):
+                        for sheet, rows in parsed.items():
+                            if isinstance(rows, list):
+                                file_result.setdefault(sheet, []).extend(rows)
+                except RuntimeError as e:
+                    msg = str(e)
+                    if "Cancelled" in msg:
+                        yield _sse("cancelled", {"message": "Extraction cancelled"})
+                        return
+                    if "rate" in msg.lower() or "Rate" in msg:
+                        yield _sse("rate_limit", {
+                            "message": "Rate limited — waiting before retry\u2026",
+                            "chunk": label,
+                        })
+                    all_errors.append(f"{label}: {msg}")
+                except Exception as ex:
+                    all_errors.append(f"{label}: {ex}")
+
+            done_chunks += 1
+            yield _sse("chunk_done", {"done": done_chunks, "total": total_chunks})
+
+            # pause between chunks to avoid bursting the rate limit
+            if ci < len(chunks) - 1:
+                pause = 3 if total_chunks > 10 else 1
+                for _ in range(pause):
+                    if cancel.is_set():
+                        yield _sse("cancelled", {"message": "Extraction cancelled"})
+                        return
+                    time.sleep(1)
+
+        if file_result:
+            all_results.append(file_result)
+
+    if not all_results:
+        yield _sse("error", {"message": "No data extracted", "errors": all_errors})
+        return
+
+    merged  = _merge(all_results)
+    summary = {k: len(v) for k, v in merged.items()}
+    yield _sse("done", {"data": merged, "summary": summary, "errors": all_errors})
+
+
+@router.post("/extract/{job_id}")
+async def extract_pdfs(job_id: str, request: Request,
+                       files: List[UploadFile] = File(...)):
     """
-    Accept one or more PDFs. For each:
-      1. Extract text + tables with pdfplumber.
-      2. Send to LLM with the schema prompt.
-      3. Parse JSON response.
-    Merge all results, return as JSON (sheet → rows).
+    SSE streaming extraction. Cancel via DELETE /ingest/extract/{job_id}.
+    Events: start | chunk_start | chunk_done | rate_limit | warning | done | error | cancelled
     """
     if not files:
         raise HTTPException(400, "No files uploaded")
 
-    results, errors = [], []
+    files_data = []
     for f in files:
-        if not f.filename.lower().endswith(".pdf"):
-            errors.append(f"{f.filename}: not a PDF, skipped")
-            continue
-    for f in files:
-        if not f.filename.lower().endswith(".pdf"):
-            errors.append(f"{f.filename}: not a PDF, skipped")
-            continue
+        if f.filename.lower().endswith(".pdf"):
+            files_data.append((f.filename, await f.read()))
+
+    cancel = threading.Event()
+    _cancel_events[job_id] = cancel
+
+    def generate():
         try:
-            data      = await f.read()
-            extracted = extract_pdf(data)
+            yield from _run_extraction(files_data, cancel, job_id)
+        finally:
+            _cancel_events.pop(job_id, None)
 
-            # Split into chunks of ~8 pages so we stay under token limits.
-            # Each chunk is sent as a separate LLM call; results are merged.
-            pages     = extracted["pages"]
-            CHUNK     = 8
-            chunks    = [pages[i:i+CHUNK] for i in range(0, max(1, len(pages)), CHUNK)]
-
-            file_result: dict = {}
-            for ci, chunk in enumerate(chunks):
-                content = tables_as_text(chunk)
-                if not content.strip():
-                    content = "\n\n".join(p["text"] for p in chunk if p.get("text"))
-                content = content[:10000]
-                if not content.strip():
-                    continue
-                label  = f"{f.filename} (pages {chunk[0]['page']}–{chunk[-1]['page']})"
-                prompt = _extraction_prompt(label, content)
-                try:
-                    raw    = _llm_extract(prompt)
-                    parsed = _parse_json(raw)
-                    if isinstance(parsed, dict):
-                        # merge chunk into file_result
-                        for sheet, rows in parsed.items():
-                            if isinstance(rows, list):
-                                file_result.setdefault(sheet, []).extend(rows)
-                except Exception as chunk_err:
-                    errors.append(f"{label}: {chunk_err}")
-
-            if file_result:
-                results.append(file_result)
-        except Exception as e:
-            logger.warning("Error processing %s: %s", f.filename, e)
-            errors.append(f"{f.filename}: {e}")
-
-    if not results:
-        raise HTTPException(422, detail={"message": "No data could be extracted", "errors": errors})
-
-    merged = _merge(results)
-    # count rows per sheet
-    summary = {k: len(v) for k, v in merged.items()}
-    return {"data": merged, "summary": summary, "errors": errors}
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/template")

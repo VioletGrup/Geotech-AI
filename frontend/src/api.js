@@ -58,5 +58,10 @@ export const api = {
   train: () => req("POST", "/predict/train"),
   chat: (message) => req("POST", "/agent/chat", { message }),
   listSites: () => req("GET", "/sites"),
+  listZones: (siteId) => req("GET", `/sites/${siteId}/zones`),
+  setZoneDecision: (siteId, zoneId, decision) =>
+    req("PATCH", `/sites/${siteId}/zones/${encodeURIComponent(zoneId)}/decision`, { decision }),
+  setSiteStatus: (siteId, status) =>
+    req("PATCH", `/sites/${siteId}/status`, { status }),
   deleteSite: (siteId) => req("DELETE", `/sites/${siteId}`),
 };
