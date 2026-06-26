@@ -6,5 +6,7 @@ __pycache__/
 Neo4j-*.txt
 .env
 app/ingestion/ingest_maryvale.py
+*.xlsx
 
 /Maryvale Geotech Data
+/Bulli Creek Geotech Data

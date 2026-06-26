@@ -2,9 +2,11 @@ import React, { useRef, useEffect, useState } from "react";
 import { api } from "../api.js";
 
 const EXAMPLES = [
-  "Predict capacity for a 0.3 m × 6 m driven pile in clay, qc 5000.",
-  "Find logged cases in sand with qc around 8000.",
-  "What's the expected load for a 0.4 m × 8 m pile, and which past cases support it?",
+  "Is zone ZONE-1.1 pre-drill or driven, and what's in it?",
+  "Which pile tests failed in zone ZONE-13.1?",
+  "Show DPSH probes that refused at 0.5 m or shallower.",
+  "What's the ground profile at borehole BH02?",
+  "Which piles fell short of their target embedment?",
 ];
 
 export default function Copilot() {
@@ -40,7 +42,7 @@ export default function Copilot() {
       <div className="stream" ref={streamRef}>
         {messages.length === 0 ? (
           <div className="empty">
-            <p>Ask the advisor to predict pile capacity or surface analog cases.</p>
+            <p>Ask the advisor about pile drilling, pile refusal, test pass/fail, DPSH refusal depths, or ground profiles.</p>
             <div className="examples">
               {EXAMPLES.map((ex) => <button key={ex} onClick={() => send(ex)}>{ex}</button>)}
             </div>

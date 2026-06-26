@@ -53,17 +53,10 @@ export const api = {
   addNode: (type, body) => req("POST", `/nodes/${type}`, body),
   bulkNodes: (type, rows) => req("POST", `/nodes/${type}/bulk`, { rows }),
 
-  // cases
-  listCases: (limit = 200) => req("GET", `/query/cases?limit=${limit}`),
-  query: ({ qc, soil_type }) => {
-    const p = new URLSearchParams();
-    if (qc !== "" && qc != null) p.set("qc", qc);
-    if (soil_type) p.set("soil_type", soil_type);
-    return req("GET", `/query?${p.toString()}`);
-  },
-
   // predict / agent
   predict: (b) => req("POST", "/predict", b),
   train: () => req("POST", "/predict/train"),
   chat: (message) => req("POST", "/agent/chat", { message }),
+  listSites: () => req("GET", "/sites"),
+  deleteSite: (siteId) => req("DELETE", `/sites/${siteId}`),
 };

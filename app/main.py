@@ -13,6 +13,9 @@ from app.api.routes_nodes import router as nodes_router
 from app.api.routes_predict import router as predict_router
 from app.api.routes_query import router as query_router
 from app.api.routes_agent import router as agent_router
+from app.api.routes_delete import router as delete_router
+from app.api.routes_graph import router as graph_router
+from app.api.routes_ingest import router as ingest_router
 from app.ingestion.schema import create_constraints
 
 logger = get_logger(__name__)
@@ -42,6 +45,9 @@ app.include_router(nodes_router)
 app.include_router(query_router)
 app.include_router(predict_router)
 app.include_router(agent_router)
+app.include_router(delete_router)
+app.include_router(graph_router)
+app.include_router(ingest_router)
 
 @app.get("/")
 def root():

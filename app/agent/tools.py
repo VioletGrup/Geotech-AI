@@ -3,56 +3,72 @@ from typing import Annotated, Optional
 from pydantic import Field
 from agent_framework import tool
 
-from app.graphrag.retrieve import get_similar_cases
-from app.graphrag.context_builder import build_context
-from app.ml.model import ModelNotTrainedError, predict_capacity
+from app.graphrag.retrieve import (
+    get_zone_summary,
+    get_pile_tests,
+    get_dpsh_refusals,
+    get_ground_profile,
+    get_pile_refusals,
+)
 
 
 @tool(
-    description="Predict pile load capacity for a solar-farm pile from its "
-    "geometry and CPT/soil inputs, grounded in similar logged cases. Returns "
-    "the prediction, the analog cases behind it, and model_status."
+    description="Summarise a zone (block/PCU): its pre-drill-vs-driven decision, "
+    "tracker counts, and how many pile locations, DPSH probes, boreholes and test "
+    "pits sit in it. Pass the full zone id, e.g. 'ZONE-1.1'."
 )
-def predict_pile_capacity(
-    diameter: Annotated[float, Field(description="Pile diameter in metres", gt=0)],
-    length: Annotated[float, Field(description="Pile length in metres", gt=0)],
-    qc: Annotated[Optional[float], Field(description="CPT cone resistance (kPa)")] = None,
-    soil_type: Annotated[Optional[str], Field(description="Soil class, e.g. clay/sand/silt")] = None,
-    pile_type: Annotated[Optional[str], Field(description="Pile type/section")] = None,
-    site_id: Annotated[Optional[str], Field(description="Site identifier")] = None,
-    top_k: Annotated[int, Field(description="Number of analog cases to retrieve", ge=1, le=20)] = 5,
+def query_zone(
+    zone_id: Annotated[str, Field(description="Zone id, e.g. 'ZONE-1.1'")],
 ) -> dict:
-    payload = {
-        "diameter": diameter, "length": length, "qc": qc,
-        "soil_type": soil_type, "pile_type": pile_type, "site_id": site_id,
-    }
-    cases = get_similar_cases(
-        qc=qc or 0, soil_type=soil_type, diameter=diameter, length=length,
-        pile_type=pile_type, site_id=site_id, top_k=top_k,
-    )
-    try:
-        prediction = predict_capacity(payload)
-    except ModelNotTrainedError:
-        loads = [c["max_load"] for c in cases if c.get("max_load") is not None]
-        if not loads:
-            return {"error": "Model untrained and no similar cases available.", "inputs": payload}
-        prediction = {
-            "predicted_capacity": float(sum(loads) / len(loads)),
-            "model_metrics": None,
-            "model_status": "fallback_average_of_similar_cases",
-        }
-    return {
-        **prediction,
-        "n_cases": len(cases),
-        "similar_cases": cases,
-        "evidence_context": build_context(cases, payload),
-    }
+    rows = get_zone_summary(zone_id)
+    return {"zone": zone_id, "found": bool(rows), "summary": rows[0] if rows else None}
 
 
-@tool(description="Retrieve logged pile cases similar in CPT resistance and soil type.")
-def query_similar_cases(
-    qc: Annotated[float, Field(description="CPT cone resistance (kPa)", ge=0)] = 0,
-    soil_type: Annotated[Optional[str], Field(description="Soil class to match")] = None,
-    top_k: Annotated[int, Field(description="Maximum cases to return", ge=1, le=20)] = 10,
+@tool(
+    description="List pile load tests with their pass/fail result and the per-type "
+    "load proportions (tension/lateral/compression, % of Ed). Filter by zone id "
+    "and/or pass status. Use passed=false to find failures."
+)
+def query_pile_tests(
+    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by, e.g. 'ZONE-13.1'")] = None,
+    passed: Annotated[Optional[bool], Field(description="True for passed, False for failed tests")] = None,
+    top_k: Annotated[int, Field(description="Max rows", ge=1, le=200)] = 25,
 ) -> dict:
-    return {"results": get_similar_cases(qc=qc, soil_type=soil_type, top_k=top_k)}
+    rows = get_pile_tests(zone_id=zone_id, passed=passed, top_k=top_k)
+    return {"n": len(rows), "results": rows}
+
+
+@tool(
+    description="Return DPSH probe refusal depths (m), optionally filtered to a zone "
+    "or to shallow refusals (max_depth). Shallow refusal drives the pile drilling."
+)
+def query_dpsh_refusals(
+    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
+    max_depth: Annotated[Optional[float], Field(description="Only refusals at or above this depth (m)")] = None,
+    top_k: Annotated[int, Field(description="Max rows", ge=1, le=200)] = 50,
+) -> dict:
+    rows = get_dpsh_refusals(zone_id=zone_id, max_depth=max_depth, top_k=top_k)
+    return {"n": len(rows), "results": rows}
+
+
+@tool(
+    description="Return the layered ground profile (soil units by depth) for a "
+    "borehole or test pit, from its ground model. Pass the location id, e.g. 'BH02' or 'TP05'."
+)
+def query_ground_profile(
+    location_id: Annotated[str, Field(description="BoreHole or TestPit id, e.g. 'BH02'")],
+) -> dict:
+    rows = get_ground_profile(location_id)
+    return {"location": location_id, "n_layers": len(rows), "layers": rows}
+
+
+@tool(
+    description="List piles that hit refusal — achieved embedment below target depth — "
+    "with the shortfall (m). Optionally filter by zone."
+)
+def query_pile_refusals(
+    zone_id: Annotated[Optional[str], Field(description="Zone id to filter by")] = None,
+    top_k: Annotated[int, Field(description="Max rows", ge=1, le=200)] = 50,
+) -> dict:
+    rows = get_pile_refusals(zone_id=zone_id, top_k=top_k)
+    return {"n": len(rows), "results": rows}

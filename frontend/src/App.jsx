@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import AddNodes from "./components/AddNodes.jsx";
-import BrowseCases from "./components/BrowseCases.jsx";
 import Copilot from "./components/Copilot.jsx";
+import ManageSites from "./components/ManageSites.jsx";
+import Ingest from "./components/Ingest.jsx";
 
 const VIEWS = [
-  { id: "add", label: "Add data", el: AddNodes, blurb: "Create piles, CPT tests, soil layers and load tests — singly or in bulk." },
-  { id: "browse", label: "Browse cases", el: BrowseCases, blurb: "Logged pile load tests from previous projects." },
-  { id: "copilot", label: "Copilot", el: Copilot, blurb: "Ask the graph-backed advisor to predict capacity or find analog cases." },
+  { id: "add", label: "Add data", el: AddNodes, blurb: "Create sites, zones, pile tests, DPSH probes, boreholes and ground models — singly or in bulk." },
+  { id: "ingest", label: "New site", el: Ingest, blurb: "Upload PDFs → extract data → review → import to graph." },
+  { id: "manage", label: "Manage sites", el: ManageSites, blurb: "View sites in the graph and permanently remove projects and their data." },
+  { id: "copilot", label: "Copilot", el: Copilot, blurb: "Ask the graph-backed advisor about pre-drill decisions, refusal, test results and ground profiles." },
 ];
 
 export default function App() {

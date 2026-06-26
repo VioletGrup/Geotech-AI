@@ -7,3 +7,7 @@ scikit-learn
 joblib
 python-dotenv
 agent-framework
+httpx
+python-multipart
+pdfplumber
+openpyxl

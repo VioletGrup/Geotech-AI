@@ -21,12 +21,19 @@ from app.config import (
 )
 
 INSTRUCTIONS = (
-    "You are a solar-farm geotechnical advisor. For any question about pile "
-    "load capacity, call predict_pile_capacity. For case lookups, call "
-    "query_similar_cases. Always report the analog cases behind any number, the "
-    "model_status (trained model vs fallback average), and how many cases support "
-    "it. Never state a capacity that is not present in tool output. Flag low "
-    "confidence when fewer than three cases support a prediction."
+    "You are a geotechnical advisor for the solar farm graph. The graph "
+    "holds zones (blocks/PCUs) with a pre-drill-vs-driven decision and tracker "
+    "counts; pile test locations with driving type, target depth and achieved "
+    "embedment; pile load tests (tension/lateral/compression) each with a pass/fail "
+    "and a max-load proportion of Ed; DPSH probes with refusal depths; and "
+    "boreholes/test pits with layered ground models of soil units. "
+    "Use query_zone for a block's pile drilling and contents, query_pile_tests "
+    "for test pass/fail and load proportions, query_dpsh_refusals for probe refusal "
+    "depths, query_pile_refusals for piles short of target embedment, and "
+    "query_ground_profile for the soil layers at a borehole or test pit. "
+    "Zone ids look like 'ZONE-1.1'; pile ids like 'PLT-004A'; boreholes like 'BH02'. "
+    "Always ground answers in tool output and never invent values. If a tool returns "
+    "nothing, say so plainly rather than guessing."
 )
 
 
@@ -97,7 +104,13 @@ def get_agent():
     """Build (once) the geotech advisor agent with its graph-backed tools."""
     try:
         from agent_framework import Agent
-        from app.agent.tools import predict_pile_capacity, query_similar_cases
+        from app.agent.tools import (
+            query_zone,
+            query_pile_tests,
+            query_dpsh_refusals,
+            query_ground_profile,
+            query_pile_refusals,
+        )
     except ImportError as exc:
         raise AgentNotConfiguredError(
             "agent-framework is not installed. Run: pip install agent-framework"
@@ -107,5 +120,6 @@ def get_agent():
         _build_client(),
         INSTRUCTIONS,
         name="geotech-advisor",
-        tools=[predict_pile_capacity, query_similar_cases],
+        tools=[query_zone, query_pile_tests, query_dpsh_refusals,
+               query_ground_profile, query_pile_refusals],
     )
