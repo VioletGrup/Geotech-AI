@@ -22,39 +22,30 @@ from app.config import (
 
 INSTRUCTIONS = (
     "You are a geotechnical advisor for solar farm pile construction. "
-    "You have access to a graph database of real project data. "
+    "Answer questions using the database tools provided. "
 
-    "CRITICAL RULE — ONE TOOL PER TURN: "
-    "You must call only ONE tool at a time. Wait for the result before calling the next tool. "
-    "NEVER call two tools in the same response. This will cause an error. "
+    "RULES — follow exactly: "
+    "1. Call ONE tool per turn. Never call two or more tools simultaneously. "
+    "2. For any question about a named site or zone, always call tool_list_sites first "
+    "   to get the site_id, then call the appropriate tool with that site_id. "
+    "3. Never answer factual questions from memory. Always use a tool. "
+    "4. Answer concisely. Lead with the number for count questions. "
 
-    "WORKFLOW for any question about a named site: "
-    "Turn 1: Call tool_list_sites with no arguments. "
-    "Turn 2: Read the site_id from the result. Call the appropriate tool with that site_id. "
-    "Turn 3: Answer using the returned data. "
-
-    "TOOL SELECTION — use the first matching rule: "
-    "- Question about totals across ALL sites → tool_db_summary() "
-    "- Question mentions a site name (any question about Maryvale, site X, etc.) → "
-    "  first call tool_list_sites, then use the returned site_id for: "
-    "  counts of zones/piles/boreholes/etc at SITE level → tool_site_counts(site_id=...) "
-    "  counts/details for a SPECIFIC ZONE (boreholes in zone 7.2, piles in zone 1.1) → tool_zone_detail(site_id=..., zone_id=...) "
-    "  list of pile ids in a zone → tool_zone_pile_ids(site_id=..., zone_id=...) "
-    "  list of zones → tool_list_zones(site_id=...) "
-    "  zones with no decision → tool_zones_by_decision(site_id=..., decision=null) "
-    "  pile embedment shortfall count → tool_pile_refusal_count(site_id=...) "
-    "  pile embedment shortfall list → tool_pile_refusals(site_id=...) "
-    "  pile test pass/fail counts → tool_pile_test_summary(site_id=...) "
-    "  DPSH refusal depths → tool_dpsh_refusals(site_id=...) "
-    "  ground profile at a borehole → tool_ground_profile(site_id=..., location_id=...) "
-
-    "NEVER answer a factual question about counts or data from memory. "
-    "If you have not called a tool yet, call one before answering. "
-    "Only say a question is unsupported if no tool in the list above can help. "
-    "Unsupported (say so): average embedment by soil type; spatial joins between piles and soil. "
-
-    "Answer concisely. Lead with the number for count questions. "
-    "Do not add CONFIDENCE or REASONING lines."
+    "EXAMPLES of correct two-step sequences: "
+    "Q: how many [boreholes / pile locations / pile tests / DPSH probes / test pits] in zone X → "
+    "   Step 1: tool_list_sites() "
+    "   Step 2: tool_zone_detail(site_id=<from step 1>, zone_id=<zone id from question>) "
+    "   Answer: report the relevant field (boreholes / pile_locations / pile_tests / dpsh_probes / test_pits). "
+    "   NEVER call tool_site_counts or tool_zones_by_decision for zone-level count questions. "
+    "   tool_zone_detail returns ALL zone counts in one call — do not make additional calls after it. "
+    "Q: how many piles in Maryvale → "
+    "   Step 1: tool_list_sites() "
+    "   Step 2: tool_site_counts(site_id=<from step 1>) "
+    "   Answer: report pile_locations from the result. "
+    "Q: which zones are pre-drilled → "
+    "   Step 1: tool_list_sites() "
+    "   Step 2: tool_zones_by_decision(site_id=<from step 1>, decision='Pre-Drill') "
+    "   Answer: list the zones."
 )
 
 
@@ -131,7 +122,6 @@ def get_agent():
             tool_site_counts,
             tool_list_zones,
             tool_zones_by_decision,
-            tool_undecided_zone_count,
             tool_zone_detail,
             tool_pile_test_summary,
             tool_pile_tests,
@@ -139,7 +129,6 @@ def get_agent():
             tool_pile_refusals,
             tool_dpsh_refusals,
             tool_ground_profile,
-            tool_zone_pile_ids,
             tool_zone_pile_ids,
         )
     except ImportError as exc:
@@ -157,7 +146,6 @@ def get_agent():
             tool_site_counts,
             tool_list_zones,
             tool_zones_by_decision,
-            tool_undecided_zone_count,
             tool_zone_detail,
             tool_pile_test_summary,
             tool_pile_tests,
@@ -166,6 +154,5 @@ def get_agent():
             tool_dpsh_refusals,
             tool_ground_profile,
             tool_zone_pile_ids,
-            tool_zone_pile_ids,        
-            ],
+        ],
     )

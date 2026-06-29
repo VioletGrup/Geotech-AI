@@ -27,32 +27,82 @@ function ConfidenceBar({ value }) {
 function ReasoningToggle({ text }) {
   const [open, setOpen] = useState(false);
   if (!text) return null;
+
+  // Split into level 1 (summary sentence) and level 2 (detail block)
+  const parts = text.split("\n\n");
+  const summary = parts[0] || "";
+  const detail  = parts.slice(1).join("\n\n").trim();
+
+  // Colour based on confidence % in the text
+  const scoreMatch = text.match(/(\d+)%/);
+  const score = scoreMatch ? parseInt(scoreMatch[1]) : null;
+  const scoreColor = !score  ? "rgba(255,255,255,0.5)"
+                   : score >= 90 ? "#34d399"
+                   : score >= 75 ? "#86efac"
+                   : score >= 60 ? "#fbbf24"
+                   :               "#f87171";
+
   return (
-    <div style={{ marginTop: 6 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          background: "none", border: "none", cursor: "pointer", padding: 0,
-          display: "flex", alignItems: "center", gap: 5,
-          color: "rgba(255,255,255,0.45)", fontSize: 11,
-        }}
-      >
-        <span style={{
-          display: "inline-block", transition: "transform .2s",
-          transform: open ? "rotate(180deg)" : "rotate(0deg)", lineHeight: 1,
-        }}>▾</span>
-        {open ? "Hide reasoning" : "Show reasoning"}
-      </button>
-      {open && (
-        <div style={{
-          marginTop: 6, padding: "8px 10px",
-          background: "rgba(0,0,0,0.25)", borderRadius: 6,
-          fontSize: 12, color: "rgba(255,255,255,0.6)",
-          lineHeight: 1.6, fontStyle: "italic",
-          borderLeft: "2px solid rgba(242,195,0,0.3)",
-        }}>
-          {text}
-        </div>
+    <div style={{ marginTop: 8 }}>
+      {/* Level 1 — always visible summary */}
+      <div style={{
+        fontSize: 12, color: "rgba(255,255,255,0.6)",
+        lineHeight: 1.6, marginBottom: 6,
+        paddingLeft: 10,
+        borderLeft: `2px solid ${scoreColor}`,
+      }}>
+        {summary}
+      </div>
+
+      {/* Level 2 — detailed breakdown, collapsible */}
+      {detail && (
+        <>
+          <button
+            onClick={() => setOpen(o => !o)}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: 0,
+              display: "flex", alignItems: "center", gap: 5,
+              color: "rgba(255,255,255,0.35)", fontSize: 11,
+            }}
+          >
+            <span style={{
+              display: "inline-block", transition: "transform .2s",
+              transform: open ? "rotate(180deg)" : "rotate(0deg)", lineHeight: 1,
+            }}>▾</span>
+            {open ? "Hide scoring detail" : "Show scoring detail"}
+          </button>
+
+          {open && (
+            <div style={{
+              marginTop: 6, padding: "10px 12px",
+              background: "rgba(0,0,0,0.3)", borderRadius: 8,
+              borderLeft: "2px solid rgba(242,195,0,0.2)",
+            }}>
+              {detail.split("\n").map((line, i) => {
+                const isBullet  = line.startsWith("•");
+                const isHeader  = line.startsWith("Confidence:") ||
+                                  line.startsWith("Tools called") ||
+                                  line.startsWith("Data returned") ||
+                                  line.startsWith("Scoring breakdown");
+                const isEmpty   = line.trim() === "";
+                return (
+                  <div key={i} style={{
+                    fontSize: 11,
+                    color: isHeader  ? "rgba(255,255,255,0.8)"
+                         : isBullet ? "rgba(255,255,255,0.6)"
+                         :             "rgba(255,255,255,0.45)",
+                    fontWeight: isHeader ? 500 : 400,
+                    marginBottom: isEmpty ? 4 : 1,
+                    paddingLeft: isBullet ? 4 : 0,
+                    lineHeight: 1.7,
+                  }}>
+                    {isEmpty ? " " : line}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

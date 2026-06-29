@@ -12,6 +12,7 @@ const VIEWS = [
 
 export default function App() {
   const [view, setView] = useState("manage");
+  const [chatMessages, setChatMessages] = useState([]);
   const [status, setStatus] = useState("wait");
   const [base, setBase] = useState("");
 
@@ -52,7 +53,9 @@ export default function App() {
           <h2>{active.label}</h2>
           <p>{active.blurb}</p>
         </div>
-        <View />
+        {view === "copilot"
+          ? <Copilot messages={chatMessages} setMessages={setChatMessages} />
+          : <View />}
       </main>
     </div>
   );
