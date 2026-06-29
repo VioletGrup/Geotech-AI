@@ -21,6 +21,7 @@ from pydantic import Field
 from agent_framework import tool
 
 from app.graphrag.retrieve import (
+    get_db_soil_types,
     list_sites,
     get_db_summary,
     get_site_counts,
@@ -33,6 +34,9 @@ from app.graphrag.retrieve import (
     get_pile_refusals,
     get_dpsh_refusals,
     get_ground_profile,
+    get_zones_no_decision,
+    get_undecided_zone_count,
+    get_zone_pile_ids
 )
 
 
@@ -97,7 +101,26 @@ def tool_zones_by_decision(
     rows = get_zones_by_decision(site_id, decision)
     return {"n": len(rows), "decision": decision, "zones": rows}
 
+@tool(description=(
+     "Return all zones in a site that have no pre-drill or driven decision set yet. "   
+     "Returns a list of zone ids. For just the count, use tool_undecided_zone_count."
+))
+def tool_zones_no_decision(
+    site_id: Annotated[str, Field(description="The site id value e.g. 'Maryvale'")],
+) -> dict:
+    rows = get_zones_no_decision(site_id)
+    return {"n_undecided": len(rows), "zones": rows}
 
+@tool(description=(
+    "Return the COUNT of zones with no pre-drill or driven decision in a site. "
+    "Use for 'how many zones have no decision yet in Maryvale'. "
+    "For the actual list of which zones, use tool_zones_no_decision."
+))
+def tool_undecided_zone_count(
+    site_id: Annotated[str, Field(description="The site id value e.g. 'Maryvale'")],
+) -> dict:
+    return get_undecided_zone_count(site_id)
+    
 @tool(description=(
     "Return full detail for a single zone: decision, tracker counts, and counts of "
     "pile locations, pile tests, DPSH probes, boreholes, test pits."
@@ -109,6 +132,23 @@ def tool_zone_detail(
     data = get_zone_summary(site_id, zone_id)
     return {"found": bool(data), "summary": data}
 
+@tool(description=(
+        "Return a list of pile ids of all the piles in the specified zone"
+))
+def tool_zone_pile_ids(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[str, Field(description="Zone to search within")]
+) -> dict:
+    rows = get_zone_pile_ids(site_id, zone_id)
+    return {"n": len(rows), "piles": rows}
+
+@tool(description=(
+    "Return all SoilType nodes in the database with their unit_no, name and description."
+))
+def tool_db_soil_types() -> dict:
+    """Return all SoilType nodes in the database with their unit_no, name and description."""
+    rows = get_db_soil_types()
+    return {"n": len(rows), "soil_types": rows}
 
 # ── Pile tests ─────────────────────────────────────────────────────────────────
 

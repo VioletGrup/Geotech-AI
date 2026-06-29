@@ -34,6 +34,12 @@ RETURN count(DISTINCT s)  AS total_sites,
        count(DISTINCT tp) AS total_test_pits
 """
 
+_DB_SOIL_TYPES = """
+MATCH (st: SoilType)
+RETURN  st.unit_no         AS unit_no,
+        st.unit_name            AS name,
+        st.description     AS description
+"""
 # ── Site-level counts ──────────────────────────────────────────────────────────
 
 _SITE_COUNTS = """
@@ -171,6 +177,25 @@ RETURN z.id                 AS zone_id,
        count(DISTINCT tp)   AS test_pits
 """
 
+_ZONE_PILE_IDS = """
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {id: $zone_id, site_id: $site_id})
+MATCH (p:PileTestLocation)-[:LOCATED_IN]->(z)
+RETURN p.id                AS pile_id
+ORDER BY p.id
+"""
+_ZONE_NO_DECISION = """
+MATCH (s:Site {id: site_id})-[:HAS_ZONE]->(z:Zone: {id: $zone_id, site_id: $site_id})
+WHERE (z.pre-drilling) = None
+RETURN z.id                 AS zone_id
+"""
+
+_UNDECIDED_ZONE_COUNT = """
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {site_id: $site_id})
+WHERE z.pre_drill_decision IS NULL
+RETURN count(z) AS undecided_zones
+"""
+
+
 # ── Ground profile ─────────────────────────────────────────────────────────────
 
 _GROUND_PROFILE = """
@@ -256,6 +281,22 @@ def get_ground_profile(site_id: str, location_id: str) -> List[Dict[str, Any]]:
     return [r.data() for r in run_query(
         _GROUND_PROFILE, {"site_id": site_id, "location_id": location_id})]
 
+def get_zones_no_decision(site_id: str) -> List[Dict[str, Any]]:
+    return [r.data for r in run_query(
+        _ZONE_NO_DECISION, {"site_id": site_id}
+    )]
+
+def get_undecided_zone_count(site_id: str) -> Dict[str, Any]:
+    rows = run_query(_UNDECIDED_ZONE_COUNT, {"site_id": site_id})
+    return rows[0].data() if rows else {"undecided_zones": 0}
+
+def get_zone_pile_ids(site_id: str, zone_id: str) -> Dict[str, Any]:
+    return [r.data() for r in run_query(
+        _ZONE_PILE_IDS, {"site_id": site_id, "zone_id": zone_id}
+    )]
+
+def get_db_soil_types() -> List[Dict[str, Any]]:
+    return [r.data() for r in run_query(_DB_SOIL_TYPES, {})]
 
 # ── Legacy capacity-prediction retrieval (kept for routes_predict / ml) ────────
 
