@@ -17,7 +17,7 @@ import openpyxl
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.ingestion.pdf_extractor import extract_pdf, tables_as_text
+from app.ingestion.pdf_extractor import extract_pdf, tables_as_text, ExtractedTable
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -212,35 +212,292 @@ SCHEMA_SUMMARY = "\n".join(
 )
 
 
-# ── Extraction prompt builder ─────────────────────────────────────────────────
+# ── Column alias map — maps contractor terminology to schema field names ───────
+# Deliberately conservative: only map when the alias is unambiguous.
+# Unknown columns are flagged for the LLM rather than guessed.
 
-def _extraction_prompt(pdf_label: str, content: str) -> str:
-    return f"""You are a geotechnical data extractor. Extract ALL data from the document below 
-into the given JSON schema. Return ONLY a valid JSON object (no markdown, no explanation).
+COLUMN_ALIASES: dict[str, dict[str, str]] = {
+    "soil-type": {
+        "unit no":         "unit_no",
+        "unit number":     "unit_no",
+        "no.":             "unit_no",
+        "no":              "unit_no",
+        "origin":          "origin",
+        "formation":       "origin",
+        "geological unit": "origin",
+        "unit name":       "unit_name",
+        "name":            "unit_name",
+        "material":        "unit_name",
+        "soil name":       "unit_name",
+        "description":     "description",
+        "material description": "description",
+    },
+    "borehole": {
+        "borehole id":    "id",
+        "borehole":       "id",
+        "bh":             "id",
+        "hole id":        "id",
+        "easting":        "easting",
+        "e (m)":          "easting",
+        "northing":       "northing",
+        "n (m)":          "northing",
+        "rl":             "elevation",
+        "elevation":      "elevation",
+        "reduced level":  "elevation",
+        "depth":          "total_depth",
+        "total depth":    "total_depth",
+        "depth (m)":      "total_depth",
+        "groundwater":    "groundwater_depth",
+        "gwl":            "groundwater_depth",
+        "water table":    "groundwater_depth",
+        "series":         "series",
+    },
+    "testpit": {
+        "test pit":       "id",
+        "trial pit":      "id",
+        "tp":             "id",
+        "pit id":         "id",
+        "easting":        "easting",
+        "northing":       "northing",
+        "rl":             "elevation",
+        "elevation":      "elevation",
+        "depth":          "total_depth",
+        "total depth":    "total_depth",
+    },
+    "dpsh": {
+        "probe id":       "id",
+        "dpsh":           "id",
+        "id":             "id",
+        "easting":        "easting",
+        "northing":       "northing",
+        "refusal depth":  "refusal_depth",
+        "refusal":        "refusal_depth",
+        "depth of refusal": "refusal_depth",
+        "depth (m)":      "refusal_depth",
+    },
+    "thermal-test": {
+        "location":       "test_pit_id",
+        "test pit":       "test_pit_id",
+        "tp":             "test_pit_id",
+        "depth":          "depth",
+        "depth (m)":      "depth",
+        "thermal reading": "thermal_reading",
+        "k (w/mk)":       "thermal_reading",
+        "k(w/mk)":        "thermal_reading",
+        "thermal resistivity": "thermal_reading",
+        "r-value":        "r_value",
+        "r value":        "r_value",
+        "r (ccm/w)":      "r_value",
+    },
+    "lab-test": {
+        "location":       "location_id",
+        "borehole":       "location_id",
+        "sample":         "location_id",
+        "top depth":      "top_depth",
+        "from (m)":       "top_depth",
+        "from":           "top_depth",
+        "bottom depth":   "bottom_depth",
+        "to (m)":         "bottom_depth",
+        "to":             "bottom_depth",
+        "material encountered": "material",
+        "material":       "material",
+        "moisture content": "moisture_content",
+        "mc (%)":         "moisture_content",
+        "liquid limit":   "liquid_limit",
+        "ll (%)":         "liquid_limit",
+        "ll":             "liquid_limit",
+        "plastic limit":  "plastic_limit",
+        "pl (%)":         "plastic_limit",
+        "pl":             "plastic_limit",
+        "plasticity index": "plasticity_index",
+        "pi (%)":         "plasticity_index",
+        "pi":             "plasticity_index",
+        "linear shrinkage": "linear_shrinkage",
+        "ls (%)":         "linear_shrinkage",
+        "emerson class":  "emerson_class",
+        "emerson":        "emerson_class",
+        "iss":            "iss",
+        "gravel (%)":     "gravel",
+        "gravel":         "gravel",
+        "sand (%)":       "sand",
+        "sand":           "sand",
+        "fines (%)":      "fines",
+        "fines":          "fines",
+        "mdd":            "compaction_mdd",
+        "mdd (t/m3)":     "compaction_mdd",
+        "omc":            "compaction_omc",
+        "omc (%)":        "compaction_omc",
+        "cbr":            "cbr_4day_2_5mm",
+        "@2.5mm":         "cbr_4day_2_5mm",
+        "swell":          "cbr_swell",
+        "specimen swell": "cbr_swell",
+    },
+    "aggressivity": {
+        "location":       "location_id",
+        "borehole":       "location_id",
+        "depth":          "depth",
+        "depth (m bgl)":  "depth",
+        "ph":             "ph",
+        "sulfate":        "sulfate",
+        "sulfate content": "sulfate",
+        "sulphate":       "sulfate",
+        "chlorides":      "chlorides",
+        "chloride":       "chlorides",
+        "resistivity":    "resistivity",
+        "exposure classification concrete": "exposure_class_concrete",
+        "concrete piles": "exposure_class_concrete",
+        "exposure classification steel":    "exposure_class_steel",
+        "steel piles":    "exposure_class_steel",
+    },
+    "pile-test-location": {
+        "pile id":        "id",
+        "pile":           "id",
+        "location":       "id",
+        "loc":            "id",
+        "plt":            "id",
+        "zone":           "zone_id",
+        "block":          "zone_id",
+        "pcu":            "zone_id",
+        "easting":        "easting",
+        "northing":       "northing",
+        "rl":             "reduced_level",
+        "reduced level":  "reduced_level",
+        "section type":   "section_type",
+        "section":        "section_type",
+        "target depth":   "target_depth",
+        "design depth":   "target_depth",
+        "achieved embedment": "achieved_embedment",
+        "achieved":       "achieved_embedment",
+        "embedment":      "achieved_embedment",
+        "drive time":     "drive_time",
+        "driving time":   "drive_time",
+        "driving rate":   "driving_rate",
+        "rate":           "driving_rate",
+        "driving type":   "driving_type",
+        "type":           "driving_type",
+        "designer":       "designer",
+    },
+}
 
-SCHEMA (sheet name → array of row objects):
-{SCHEMA_SUMMARY}
 
-Rules:
-- Include only sheets where you find data. Empty sheets → omit.
-- Use null for missing values, never invent values.
-- IDs: use the label from the document exactly (e.g. BH01, TP03, PLT-004A).
-- zone_id: set to null — zones are assigned separately from a site map.
-- For soil-type, use the unit number from a geological profile table (1, 2A, 2B … 4D).
-- For ground-layer, emit one row per (layer depth range × soil unit).
-- For pile tests, emit one pile-test row per pile location, then sub-test rows.
-- passed: true if max_load_proportion_ed ≥ 200, false otherwise, null if not tested.
-- Numbers: strip units (store 1.65 not "1.65 m"), convert <10 to null.
+def _map_headers(table: "ExtractedTable", sheet_name: str) -> dict[str, str]:
+    """
+    Map table column headers to schema field names using the alias dictionary.
+    Returns {table_header: schema_field} for matched columns only.
+    Unmatched columns are excluded and flagged in the LLM prompt.
+    """
+    aliases = COLUMN_ALIASES.get(sheet_name, {})
+    mapping: dict[str, str] = {}
+    for header in table.headers:
+        key = header.lower().strip()
+        if key in aliases:
+            mapping[header] = aliases[key]
+    return mapping
+
+
+# ── Targeted LLM prompts per table type ───────────────────────────────────────
+
+# Maps heuristic table_type → schema sheet names it could produce
+TABLE_TYPE_TO_SHEETS: dict[str, list[str]] = {
+    "soil_profile":     ["soil-type"],
+    "ground_model":     ["ground-layer", "ground-model"],
+    "borehole_summary": ["borehole"],
+    "testpit_summary":  ["testpit"],
+    "laboratory_test":  ["lab-test"],
+    "thermal_test":     ["thermal-test"],
+    "aggressivity":     ["aggressivity"],
+    "pile_test":        ["pile-test-location", "pile-test",
+                         "tension-test", "lateral-test", "compression-test"],
+    "dpsh":             ["dpsh"],
+}
+
+
+def _targeted_prompt(table: "ExtractedTable") -> str:
+    """
+    Build a targeted LLM prompt for a single classified table.
+    Includes the column mapping found by the algorithm, flags unmapped columns,
+    and tells the LLM what sheet(s) to produce.
+    """
+    t_type    = table.table_type
+    sheets    = TABLE_TYPE_TO_SHEETS.get(t_type, [])
+    schema_lines = "\n".join(
+        f"  {name}: {', '.join(SCHEMA[name]['columns'])}  [{SCHEMA[name]['desc']}]"
+        for name in sheets if name in SCHEMA
+    )
+
+    # Column mapping from algorithm
+    primary_sheet = sheets[0] if sheets else None
+    mapping       = _map_headers(table, primary_sheet) if primary_sheet else {}
+    mapped_str    = "\n".join(
+        f"  '{col}' → {field}" for col, field in mapping.items()
+    ) or "  (no automatic column matches found)"
+    unmapped = [h for h in table.headers if h not in mapping]
+    unmapped_str = ", ".join(f"'{c}'" for c in unmapped) if unmapped else "none"
+
+    context = ""
+    if table.title:
+        context = f"Table title from document: {table.title}\n"
+    if table.raw_text_above:
+        context += f"Context above table: {table.raw_text_above[:200]}\n"
+
+    return f"""You are a geotechnical data extractor. Extract data from the table below.
+Return ONLY a valid JSON object mapping sheet names to arrays of row objects.
+
+{context}
+TARGET SCHEMA (only produce these sheets):
+{schema_lines}
+
+COLUMN MAPPING (already resolved by algorithm — use these):
+{mapped_str}
+
+UNMAPPED COLUMNS (use your judgement — map only if confident, otherwise null):
+{unmapped_str}
+
+RULES:
+- Use the column mapping above. Do not second-guess mapped columns.
+- For unmapped columns: match by meaning only if very confident. If uncertain → null.
+- Use null for missing/blank values. Never invent data.
+- IDs: use the exact label from the document (e.g. BH01, TP03, PLT-004A).
+- Numbers: strip units, store as numbers (1.65 not "1.65 m").
+- zone_id: always null (assigned separately from site map).
 - Do not include rows that are entirely null.
 
-DOCUMENT: {pdf_label}
----
-{content}
----
+TABLE ({table.row_count()} rows, {table.column_count()} columns):
+{table.as_text()}
 
-Return JSON object mapping sheet names to arrays of row objects.
-"""
+Return JSON only. No markdown, no explanation."""
 
+
+def _generic_prompt(table: "ExtractedTable") -> str:
+    """
+    Fallback prompt for unclassified tables — uses the full schema
+    but explicitly warns against over-eager mapping.
+    """
+    context = f"Table title: {table.title}\n" if table.title else ""
+    context += f"Context: {table.raw_text_above[:200]}\n" if table.raw_text_above else ""
+
+    return f"""You are a geotechnical data extractor. A table from a PDF report is shown below.
+Determine which schema sheet(s) it belongs to and extract the data.
+Return ONLY a valid JSON object, or an empty object {{}} if no data can be extracted.
+
+{context}
+FULL SCHEMA:
+{SCHEMA_SUMMARY}
+
+RULES:
+- Map to a schema sheet ONLY if you are confident — do not force a fit.
+- If the table doesn't match any schema sheet, return {{}}.
+- Column names may differ from schema names — map by meaning, not by name.
+- Be conservative: uncertain columns → null rather than a guess.
+- null for missing values. Numbers without units. zone_id always null.
+
+TABLE:
+{table.as_text()}
+
+Return JSON only."""
+
+
+# ── Merge results ─────────────────────────────────────────────────────────────
 
 # ── Merge results from multiple PDFs ─────────────────────────────────────────
 
@@ -353,74 +610,113 @@ def _sse(event: str, data: dict) -> str:
 
 
 def _run_extraction(files_data: list, cancel: threading.Event, job_id: str):
-    """Generator yielding SSE strings. Runs synchronously."""
+    """
+    Two-stage extraction generator yielding SSE strings.
+
+    Stage 1 — Algorithm:
+        pdfplumber extracts tables, captures titles/context,
+        heuristics classify each table by type, column aliases
+        map known headers to schema fields.
+
+    Stage 2 — LLM:
+        Each classified table gets a targeted prompt containing
+        only the relevant schema sheets and the algorithm's column
+        mapping. Unclassified tables get a conservative generic prompt.
+        The LLM maps remaining/ambiguous columns and fills values.
+    """
     file_plans = []
     for filename, data in files_data:
-        extracted   = extract_pdf(data)
-        table_pages = [pg for pg in extracted["pages"] if pg.get("tables")]
-        if not table_pages:
+        extracted = extract_pdf(data)
+        tables = extracted["extracted_tables"]
+        if not tables:
             yield _sse("warning", {"message": f"{filename}: no tables found, skipped"})
             continue
-        CHUNK_PAGES = 6
-        chunks = [table_pages[i:i+CHUNK_PAGES] for i in range(0, len(table_pages), CHUNK_PAGES)]
-        file_plans.append((filename, chunks))
+        file_plans.append((filename, tables))
 
     if not file_plans:
         yield _sse("error", {"message": "No tables found in any uploaded PDF"})
         return
 
-    total_chunks = sum(len(c) for _, c in file_plans)
-    yield _sse("start", {"total_chunks": total_chunks, "total_files": len(file_plans)})
+    total_chunks = sum(len(tables) for _, tables in file_plans)
+    yield _sse("start", {"total_chunks": total_chunks,
+                          "total_files": len(file_plans)})
 
     done_chunks = 0
     all_results, all_errors = [], []
 
-    for filename, chunks in file_plans:
+    for filename, tables in file_plans:
         if cancel.is_set():
             yield _sse("cancelled", {"message": "Extraction cancelled"})
             return
+
+        # Log classification summary
+        from collections import Counter
+        types = Counter(t.table_type or "unclassified" for t in tables)
+        logger.info("%s: %d tables — %s", filename,
+                    len(tables), dict(types))
+
         file_result: dict = {}
 
-        for ci, chunk in enumerate(chunks):
+        for table in tables:
             if cancel.is_set():
                 yield _sse("cancelled", {"message": "Extraction cancelled"})
                 return
 
-            label = f"{filename} (pp {chunk[0]['page']}\u2013{chunk[-1]['page']})"
+            label = (f"{filename} p{table.page} "
+                     f"table {table.table_index}"
+                     + (f" [{table.table_type}]" if table.table_type else " [unclassified]"))
+
             yield _sse("chunk_start", {
-                "file": filename, "chunk": ci+1,
-                "done": done_chunks, "total": total_chunks, "label": label,
+                "file":          filename,
+                "chunk":         done_chunks + 1,
+                "done":          done_chunks,
+                "total":         total_chunks,
+                "label":         label,
+                "table_type":    table.table_type,
+                "table_title":   table.title,
+                "n_rows":        table.row_count(),
+                "n_cols":        table.column_count(),
             })
 
-            content = tables_as_text(chunk)[:8000]
-            if content.strip():
-                prompt = _extraction_prompt(label, content)
-                try:
-                    raw    = _llm_extract(prompt, cancel=cancel)
-                    parsed = _parse_json(raw)
-                    if isinstance(parsed, dict):
-                        for sheet, rows in parsed.items():
-                            if isinstance(rows, list):
-                                file_result.setdefault(sheet, []).extend(rows)
-                except RuntimeError as e:
-                    msg = str(e)
-                    if "Cancelled" in msg:
-                        yield _sse("cancelled", {"message": "Extraction cancelled"})
-                        return
-                    if "rate" in msg.lower() or "Rate" in msg:
-                        yield _sse("rate_limit", {
-                            "message": "Rate limited — waiting before retry\u2026",
-                            "chunk": label,
-                        })
-                    all_errors.append(f"{label}: {msg}")
-                except Exception as ex:
-                    all_errors.append(f"{label}: {ex}")
+            # Skip tiny tables — likely artefacts or formatting
+            if table.row_count() < 1 or table.column_count() < 2:
+                done_chunks += 1
+                yield _sse("chunk_done", {"done": done_chunks, "total": total_chunks,
+                                           "skipped": True, "reason": "too small"})
+                continue
+
+            # Build targeted or generic prompt
+            if table.table_type:
+                prompt = _targeted_prompt(table)
+            else:
+                prompt = _generic_prompt(table)
+
+            try:
+                raw    = _llm_extract(prompt, cancel=cancel)
+                parsed = _parse_json(raw)
+                if isinstance(parsed, dict) and parsed:
+                    for sheet, rows in parsed.items():
+                        if isinstance(rows, list) and rows:
+                            file_result.setdefault(sheet, []).extend(rows)
+            except RuntimeError as e:
+                msg = str(e)
+                if "Cancelled" in msg:
+                    yield _sse("cancelled", {"message": "Extraction cancelled"})
+                    return
+                if "rate" in msg.lower():
+                    yield _sse("rate_limit", {
+                        "message": "Rate limited — waiting before retry…",
+                        "chunk": label,
+                    })
+                all_errors.append(f"{label}: {msg}")
+            except Exception as ex:
+                all_errors.append(f"{label}: {ex}")
 
             done_chunks += 1
             yield _sse("chunk_done", {"done": done_chunks, "total": total_chunks})
 
-            # pause between chunks to avoid bursting the rate limit
-            if ci < len(chunks) - 1:
+            # Pause between LLM calls
+            if done_chunks < total_chunks:
                 pause = 3 if total_chunks > 10 else 1
                 for _ in range(pause):
                     if cancel.is_set():
@@ -438,6 +734,7 @@ def _run_extraction(files_data: list, cancel: threading.Event, job_id: str):
     merged  = _merge(all_results)
     summary = {k: len(v) for k, v in merged.items()}
     yield _sse("done", {"data": merged, "summary": summary, "errors": all_errors})
+
 
 
 @router.post("/extract/{job_id}")

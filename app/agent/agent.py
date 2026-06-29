@@ -46,6 +46,10 @@ INSTRUCTIONS = (
     "   Step 1: tool_list_sites() "
     "   Step 2: tool_zones_by_decision(site_id=<from step 1>, decision='Pre-Drill') "
     "   Answer: list the zones."
+    "Q: average pile embedment depth in Maryvale / in zone X → "
+    "   Step 1: tool_list_sites() "
+    "   Step 2: tool_avg_embedment(site_id=<from step 1>, zone_id=<if zone mentioned>) "
+    "   Answer: report avg_embedment_m and avg_target_depth_m from the result. "
 )
 
 
@@ -130,6 +134,13 @@ def get_agent():
             tool_dpsh_refusals,
             tool_ground_profile,
             tool_zone_pile_ids,
+            tool_db_soil_types,
+            tool_zone_pile_count,
+            tool_zone_borehole_count,
+            tool_zone_testpit_count,
+            tool_zone_dpsh_count,
+            tool_zone_dpsh_coordinates,
+            tool_avg_embedment,
         )
     except ImportError as exc:
         raise AgentNotConfiguredError(
@@ -154,5 +165,12 @@ def get_agent():
             tool_dpsh_refusals,
             tool_ground_profile,
             tool_zone_pile_ids,
+            tool_db_soil_types,
+            tool_zone_pile_count,
+            tool_zone_borehole_count,
+            tool_zone_testpit_count,
+            tool_zone_dpsh_count,
+            tool_zone_dpsh_coordinates,
+            tool_avg_embedment,
         ],
     )

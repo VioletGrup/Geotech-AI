@@ -108,6 +108,11 @@ MATCH (p:DPSHTest)-[:LOCATED_IN]->(z)
 RETURN count(p) AS dpsh_count
 """
 
+_ZONE_DPSH_COORDINATES = """
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {id: $zone_id, site_id: $site_id})
+MATCH (p:DPSHTest)-[:LOCATED_IN]->(z)
+RETURN p.id AS dpsh_test, z.id AS zone, p.easting AS easting, p.northing AS northing
+"""
 # ── Pile refusal (short of target embedment) ───────────────────────────────────
 
 _PILE_REFUSALS = """
@@ -237,6 +242,20 @@ RETURN loc.id AS location, head(labels(loc)) AS kind,
 ORDER BY l.start_depth ASC
 """
 
+# ── Statistics ─────────────────────────────────────────────────────────────
+_AVG_EMBEDMENT = """
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {site_id: $site_id})
+MATCH (p:PileTestLocation)-[:LOCATED_IN]->(z)
+WHERE p.achieved_embedment IS NOT NULL
+  AND ($zone_id IS NULL OR z.id = $zone_id)
+RETURN count(p)                              AS pile_count,
+       round(avg(p.achieved_embedment), 3)   AS avg_embedment_m,
+       round(min(p.achieved_embedment), 3)   AS min_embedment_m,
+       round(max(p.achieved_embedment), 3)   AS max_embedment_m,
+       round(avg(p.target_depth), 3)         AS avg_target_depth_m
+"""
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Python functions
 # ══════════════════════════════════════════════════════════════════════════════
@@ -338,6 +357,16 @@ def get_zone_dpsh_count(site_id: str, zone_id: str) -> Dict[str, Any]:
     rows = run_query(_ZONE_DPSH_COUNT, {"site_id": site_id, "zone_id": zone_id})
     return rows[0].data() if rows else {"dpsh_count": 0}
 
+def get_zone_dpsh_coordinates(site_id: str, zone_id: str) -> List[Dict[str, Any]]:
+    return [r.data() for r in run_query(
+        _ZONE_DPSH_COORDINATES, {"site_id": site_id, "zone_id": zone_id}
+    )]
+
+def get_avg_embedment(site_id: str,
+                      zone_id: Optional[str] = None) -> Dict[str, Any]:
+    rows = run_query(_AVG_EMBEDMENT,
+                     {"site_id": site_id, "zone_id": zone_id})
+    return rows[0].data() if rows else {}
 # ── Legacy capacity-prediction retrieval (kept for routes_predict / ml) ────────
 
 _SIMILAR_CASES = """

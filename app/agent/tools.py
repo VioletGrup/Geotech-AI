@@ -22,6 +22,7 @@ from agent_framework import tool
 
 from app.graphrag.retrieve import (
     get_db_soil_types,
+    get_zone_dpsh_coordinates,
     list_sites,
     get_db_summary,
     get_site_counts,
@@ -41,6 +42,7 @@ from app.graphrag.retrieve import (
     get_zone_dpsh_count,
     get_zone_borehole_count,
     get_zone_testpit_count,
+    get_avg_embedment,
 )
 
 
@@ -189,6 +191,16 @@ def tool_zone_dpsh_count(
 ) -> dict:
     return get_zone_dpsh_count(site_id, zone_id)
 
+@tool(description=(
+    "Return the ids and coordinates of all DPSH probes in the specified zone."
+))
+def tool_zone_dpsh_coordinates(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[str, Field(description="Zone to search within")]
+) -> dict:
+    rows = get_zone_dpsh_coordinates(site_id, zone_id)
+    return {"n": len(rows), "dpsh_probes": rows}
+
 # ── Pile tests ─────────────────────────────────────────────────────────────────
 
 @tool(description=(
@@ -280,3 +292,20 @@ def tool_ground_profile(
 ) -> dict:
     rows = get_ground_profile(site_id, location_id)
     return {"location": location_id, "n_layers": len(rows), "layers": rows}
+
+# ── Statistics ─────────────────────────────────────────────────────────────
+@tool(description=(
+    "Return the average achieved pile embedment depth across a site or zone, "
+    "plus min, max, and average target depth for comparison. "
+    "Use for 'average embedment depth in Maryvale', "
+    "'average pile depth in zone 7.2', "
+    "'how deep did piles go on average'."
+))
+def tool_avg_embedment(
+    site_id: Annotated[str, Field(description="Site id e.g. 'Maryvale'")],
+    zone_id: Annotated[Optional[str], Field(
+        description="Zone id to filter to one zone, or omit for whole site"
+    )] = None,
+) -> dict:
+    result = get_avg_embedment(site_id, zone_id=zone_id)
+    return result
