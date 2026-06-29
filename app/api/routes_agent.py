@@ -41,6 +41,12 @@ TOOL_DESCRIPTIONS = {
     "tool_pile_refusals":        "list piles did not reach target embedment depth shortfall which piles fell short embedment driven refusal",
     "tool_dpsh_refusals":        "dpsh probe refusal depths metres site zone shallow refusals pre-drill decisions probe depth",
     "tool_ground_profile":       "layered ground profile soil units depth borehole test pit ground profile bh tp soil layers",
+    "tool_zone_pile_count":      "Return the count of the piles / pile test location in the specified zone",
+    "tool_zone_borehole_count":  "Return the count of boreholes in the specified zone.",
+    "tool_zone_testpit_count":   "Return the count of test pits in the specified zone.",
+    "tool_zone_dpsh_count":      "Return the count of DPSH probes in the specified zone.",
+    "tool_zone_dpsh_coordinates": "Return the ids and coordinates of all DPSH probes in the specified zone.",
+    "tool_avg_embedment":         "average achieved pile embedment depth site zone min max target how deep piles go average depth driven"
 }
 
 NAVIGATION_TOOLS = {"tool_list_sites", "tool_list_zones"}
@@ -192,10 +198,10 @@ def _build_reasoning(
         for tc in ans_tools:
             result = tc.get("result") or {}
             if not isinstance(result, dict): continue
-            priority = ["boreholes", "pile_locations", "pile_tests", "dpsh_probes", "test_pits",
-                    "n_refusals", "avg_shortfall_m", "total_tests", "passed", "failed",
-                    "n_zones", "n", "undecided_zones", "n_undecided",
-                    "zones"]
+            priority = [
+                    "boreholes", "pile_locations", "pile_tests", "dpsh_probes", "test_pits",
+                    "avg_embedment_m", "n_refusals", "avg_shortfall_m", ...
+                ]
             for k in priority:
                 if result.get(k) is not None:
                     data_phrase = f", which returned {k.replace('_',' ')}: {result[k]}"

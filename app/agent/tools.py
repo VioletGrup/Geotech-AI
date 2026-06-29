@@ -36,7 +36,11 @@ from app.graphrag.retrieve import (
     get_ground_profile,
     get_zones_no_decision,
     get_undecided_zone_count,
-    get_zone_pile_ids
+    get_zone_pile_ids,
+    get_zone_pile_count,
+    get_zone_dpsh_count,
+    get_zone_borehole_count,
+    get_zone_testpit_count,
 )
 
 
@@ -146,9 +150,44 @@ def tool_zone_pile_ids(
     "Return all SoilType nodes in the database with their unit_no, name and description."
 ))
 def tool_db_soil_types() -> dict:
-    """Return all SoilType nodes in the database with their unit_no, name and description."""
     rows = get_db_soil_types()
     return {"n": len(rows), "soil_types": rows}
+
+@tool(description=(
+        "Return the count of the piles / pile test location in the specified zone"
+))
+def tool_zone_pile_count(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[str, Field(description="Zone to search within")]
+) -> dict:
+    return get_zone_pile_count(site_id, zone_id)
+
+@tool(description=(
+    "Return the count of boreholes in the specified zone"
+))
+def tool_zone_borehole_count(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[str, Field(description="Zone to search within")]
+) -> dict:
+    return get_zone_borehole_count(site_id, zone_id)
+
+@tool(description=(
+    "Return the count of test pits in the specified zone"
+))
+def tool_zone_testpit_count(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[str, Field(description="Zone to search within")]
+) -> dict:
+    return get_zone_testpit_count(site_id, zone_id)
+
+@tool(description=(
+    "Return the count of DPSH probes in the specified zone"
+))
+def tool_zone_dpsh_count(
+    site_id: Annotated[str, Field(description="Site id")],
+    zone_id: Annotated[str, Field(description="Zone to search within")]
+) -> dict:
+    return get_zone_dpsh_count(site_id, zone_id)
 
 # ── Pile tests ─────────────────────────────────────────────────────────────────
 

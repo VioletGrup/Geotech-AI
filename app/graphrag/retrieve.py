@@ -84,6 +84,30 @@ RETURN z.id AS zone_id, z.pre_drill_decision AS decision
 ORDER BY z.id
 """
 
+_ZONE_PILE_COUNT = """"
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {id: $zone_id, site_id: $site_id})
+MATCH (p:PileTestLocation)-[:LOCATED_IN]->(z)
+RETURN count(p) AS pile_count
+"""
+
+_ZONE_BOREHOLE_COUNT = """"
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {id: $zone_id, site_id: $site_id})
+MATCH (p:BoreHole)-[:LOCATED_IN]->(z)
+RETURN count(p) AS borehole_count
+"""
+
+_ZONE_TESTPIT_COUNT = """"
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {id: $zone_id, site_id: $site_id})
+MATCH (p:TestPit)-[:LOCATED_IN]->(z)
+RETURN count(p) AS testpit_count
+"""
+
+_ZONE_DPSH_COUNT = """"
+MATCH (s:Site {id: $site_id})-[:HAS_ZONE]->(z:Zone {id: $zone_id, site_id: $site_id})
+MATCH (p:DPSHTest)-[:LOCATED_IN]->(z)
+RETURN count(p) AS dpsh_count
+"""
+
 # ── Pile refusal (short of target embedment) ───────────────────────────────────
 
 _PILE_REFUSALS = """
@@ -297,6 +321,22 @@ def get_zone_pile_ids(site_id: str, zone_id: str) -> Dict[str, Any]:
 
 def get_db_soil_types() -> List[Dict[str, Any]]:
     return [r.data() for r in run_query(_DB_SOIL_TYPES, {})]
+
+def get_zone_pile_count(site_id: str, zone_id: str) -> Dict[str, Any]:
+    rows = run_query(_ZONE_PILE_COUNT, {"site_id": site_id, "zone_id": zone_id})
+    return rows[0].data() if rows else {"pile_count": 0}
+
+def get_zone_borehole_count(site_id: str, zone_id: str) -> Dict[str, Any]:
+    rows = run_query(_ZONE_BOREHOLE_COUNT, {"site_id": site_id, "zone_id": zone_id})
+    return rows[0].data() if rows else {"borehole_count": 0}
+
+def get_zone_testpit_count(site_id: str, zone_id: str) -> Dict[str, Any]:
+    rows = run_query(_ZONE_TESTPIT_COUNT, {"site_id": site_id, "zone_id": zone_id})
+    return rows[0].data() if rows else {"testpit_count": 0}
+
+def get_zone_dpsh_count(site_id: str, zone_id: str) -> Dict[str, Any]:
+    rows = run_query(_ZONE_DPSH_COUNT, {"site_id": site_id, "zone_id": zone_id})
+    return rows[0].data() if rows else {"dpsh_count": 0}
 
 # ── Legacy capacity-prediction retrieval (kept for routes_predict / ml) ────────
 
