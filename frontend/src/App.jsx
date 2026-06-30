@@ -1,31 +1,38 @@
 import React, { useEffect, useState } from "react";
-import AddNodes from "./components/AddNodes.jsx";
 import Copilot from "./components/Copilot.jsx";
 import ManageSites from "./components/manageSites.jsx";
 import Ingest from "./components/ingest.jsx";
 
-const VIEWS = [
-  { id: "ingest", label: "New site", el: Ingest, blurb: "Upload PDFs → extract data → review → import to graph." },
-  { id: "manage", label: "Manage sites", el: ManageSites, blurb: "View sites in the graph and permanently remove projects and their data." },
-  { id: "copilot", label: "Copilot", el: Copilot, blurb: "Ask the graph-backed advisor about pre-drill decisions, refusal, test results and ground profiles." },
-];
-
 export default function App() {
-  const [view, setView] = useState("manage");
+  const [view,         setView]         = useState("manage");
+  const [ingestProps,  setIngestProps]  = useState({});   // {siteId, siteType}
   const [chatMessages, setChatMessages] = useState([]);
-  const [status, setStatus] = useState("wait");
-  const [base, setBase] = useState("");
+  const [status,       setStatus]       = useState("wait");
+  const [base,         setBase]         = useState("");
 
   useEffect(() => {
     import("./api.js").then(({ api }) => {
       api.health()
-        .then(async () => { setStatus("ok"); setBase(await api.base()); })
+        .then(async () => { setStatus("ok");   setBase(await api.base()); })
         .catch(async () => { setStatus("down"); setBase(await api.base()); });
     });
   }, []);
 
-  const active = VIEWS.find((v) => v.id === view);
-  const View = active.el;
+  function goIngest(siteId, siteType) {
+    setIngestProps({ siteId, siteType });
+    setView("ingest");
+  }
+
+  const NAV = [
+    { id: "manage",  label: "Sites" },
+    { id: "ingest",  label: "Upload data" },
+    { id: "copilot", label: "Copilot" },
+  ];
+
+  const BLURBS = {
+    manage:  "Manage project sites and zone pre-drill / driven decisions.",
+    copilot: "Ask the graph-backed advisor about pre-drill decisions, refusal, test results and ground profiles.",
+  };
 
   return (
     <div className="layout">
@@ -35,8 +42,9 @@ export default function App() {
           <div className="sub">solar pile · graph advisor</div>
         </div>
         <nav className="nav">
-          {VIEWS.map((v, i) => (
-            <button key={v.id} className={v.id === view ? "active" : ""} onClick={() => setView(v.id)}>
+          {NAV.map((v, i) => (
+            <button key={v.id} className={v.id === view ? "active" : ""}
+              onClick={() => setView(v.id)}>
               <span className="idx">{String(i + 1).padStart(2, "0")}</span>
               {v.label}
             </button>
@@ -44,18 +52,22 @@ export default function App() {
         </nav>
         <div className="status">
           <span className={`dot ${status}`} />
-          {status === "ok" ? "api connected" : status === "down" ? "api unreachable" : "checking…"}
+          {status === "ok" ? "api connected"
+            : status === "down" ? "api unreachable"
+            : "checking…"}
           {base && <div style={{ marginTop: 4, opacity: 0.7 }}>{base.replace("http://", "")}</div>}
         </div>
       </aside>
+
       <main className="content">
         <div className="head">
-          <h2>{active.label}</h2>
-          <p>{active.blurb}</p>
+          <h2>{NAV.find(v => v.id === view)?.label}</h2>
+          <p>{BLURBS[view]}</p>
         </div>
-        {view === "copilot"
-          ? <Copilot messages={chatMessages} setMessages={setChatMessages} />
-          : <View />}
+
+        {view === "manage"  && <ManageSites onGoIngest={goIngest} />}
+        {view === "ingest"  && <Ingest {...ingestProps} onBack={() => setView("manage")} />}
+        {view === "copilot" && <Copilot messages={chatMessages} setMessages={setChatMessages} />}
       </main>
     </div>
   );

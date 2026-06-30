@@ -627,7 +627,17 @@ def _run_extraction(files_data: list, cancel: threading.Event, job_id: str):
     file_plans = []
     for filename, data in files_data:
         extracted = extract_pdf(data)
-        tables = extracted["extracted_tables"]
+        tables    = extracted["extracted_tables"]
+        appx_page = extracted.get("appendix_start_page")
+
+        if appx_page:
+            yield _sse("info", {
+                "message": (
+                    f"{filename}: appendix detected at page {appx_page} — "
+                    f"extraction stopped there. "
+                    f"{len(tables)} table(s) found before appendix."
+                )
+            })
         if not tables:
             yield _sse("warning", {"message": f"{filename}: no tables found, skipped"})
             continue

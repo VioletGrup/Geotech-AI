@@ -175,22 +175,54 @@ def _classify_table(title: Optional[str], headers: list[str]) -> Optional[str]:
 
 # ── main extraction function ──────────────────────────────────────────────────
 
+# Patterns that indicate the start of an appendix section.
+# Matched against the first 400 chars of a page's text (case-insensitive).
+# Requires the word to appear as a standalone heading — not inside a sentence.
+_APPENDIX_PATTERNS = [
+    re.compile(r'(?:^|\n)\s*APPENDIX\b',        re.IGNORECASE),
+    re.compile(r'(?:^|\n)\s*Appendix\s+[A-Z0-9]',re.IGNORECASE),
+    re.compile(r'(?:^|\n)\s*APPENDICES\b',       re.IGNORECASE),
+    re.compile(r'(?:^|\n)\s*Annex\s+[A-Z0-9]',  re.IGNORECASE),
+    re.compile(r'(?:^|\n)\s*ANNEX\b',            re.IGNORECASE),
+]
+
+def _is_appendix_start(page_text: str) -> bool:
+    """
+    Return True if this page looks like the start of an appendix section.
+    Only matches when the appendix keyword appears as a standalone heading
+    in the first part of the page — not buried mid-paragraph.
+    """
+    sample = page_text[:400]
+    return any(p.search(sample) for p in _APPENDIX_PATTERNS)
+
+
 def extract_pdf(data: bytes) -> dict:
     """
     Extract all tables from a PDF with context.
+    Stops extracting when an appendix section is detected.
     Returns:
         {
           "pages": [{"page": int, "text": str, "tables": [...raw...]}],
           "extracted_tables": [ExtractedTable, ...],
           "all_text": str,
+          "appendix_start_page": int | None,
         }
     """
     pages_raw: list[dict] = []
     extracted: list[ExtractedTable] = []
+    appendix_start_page: Optional[int] = None
 
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         for page_num, page in enumerate(pdf.pages, 1):
             page_text = (page.extract_text() or "").strip()
+
+            # Stop extraction once appendix is detected
+            if appendix_start_page is None and _is_appendix_start(page_text):
+                appendix_start_page = page_num
+                # Don't break — we want to record the stop point but not extract
+                continue
+            if appendix_start_page is not None:
+                continue   # skip all pages after appendix starts
 
             raw_tables = page.extract_tables()
             cleaned_tables: list[list[list[str]]] = []
@@ -246,9 +278,10 @@ def extract_pdf(data: bytes) -> dict:
 
     all_text = "\n\n".join(p["text"] for p in pages_raw if p["text"])
     return {
-        "pages":            pages_raw,
-        "extracted_tables": extracted,
-        "all_text":         all_text,
+        "pages":              pages_raw,
+        "extracted_tables":   extracted,
+        "all_text":           all_text,
+        "appendix_start_page": appendix_start_page,
     }
 
 

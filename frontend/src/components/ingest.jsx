@@ -253,8 +253,12 @@ export default function Ingest({ initSiteType }) {
             case "rate_limit":
               setProgress(p => ({...p, rateLimited:true, label:data.message}));
               break;
+            case "info":
+              // informational (e.g. appendix detected) — show as a dim note, not an error
+              setError(prev => prev ? `${prev}\nℹ ${data.message}` : `ℹ ${data.message}`);
+              break;
             case "warning":
-              setError(prev => prev ? `${prev}\n${data.message}` : data.message);
+              setError(prev => prev ? `${prev}\n⚠ ${data.message}` : `⚠ ${data.message}`);
               break;
             case "done":
               setPreview({ data:data.data, summary:data.summary, errors:data.errors||[] });

@@ -340,98 +340,177 @@ function ZonePanel({ site, onClose }) {
 
 
 // ── completed site quick-create form ─────────────────────────────────────────
-function CompletedSiteForm({ onDone, onBack, onCancel }) {
-  const [id,   setId]   = useState("");
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err,  setErr]  = useState(null);
-  async function submit() {
-    if (!id.trim()) { setErr("Site ID is required"); return; }
-    setBusy(true); setErr(null);
-    try {
-      await api.addNode("site", { id:id.trim(), name:name.trim()||id.trim(), status:"completed" });
-      onDone();
-    } catch(e) { setErr(e.message); setBusy(false); }
-  }
-  return (
-    <div style={{background:"var(--surface-2)",borderRadius:14,padding:"28px 28px 24px",
-      maxWidth:420,width:"100%",border:"1px solid var(--border)"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-        <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:18}}>←</button>
-        <span style={{fontWeight:500,fontSize:15,flex:1}}>Add completed site</span>
-        <button onClick={onCancel} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:18}}>×</button>
-      </div>
-      <p style={{fontSize:13,color:"var(--text-secondary)",margin:"0 0 16px",lineHeight:1.6}}>
-        Create the site node. Upload its data and set zone decisions afterwards.
-      </p>
-      <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:16}}>
-        <div>
-          <label style={{fontSize:12,color:"var(--text-secondary)",display:"block",marginBottom:4}}>
-            Site ID <span style={{color:"var(--text-danger)"}}>*</span>
-          </label>
-          <input value={id} onChange={e=>setId(e.target.value)} placeholder="e.g. SITE-MARYVALE"
-            style={{width:"100%",padding:"8px 12px",borderRadius:8,fontSize:13,
-              border:"1px solid var(--border-strong)",background:"var(--surface-1)",
-              color:"var(--text-primary)",boxSizing:"border-box"}}/>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"var(--text-secondary)",display:"block",marginBottom:4}}>Site name</label>
-          <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Maryvale Solar Farm"
-            style={{width:"100%",padding:"8px 12px",borderRadius:8,fontSize:13,
-              border:"1px solid var(--border-strong)",background:"var(--surface-1)",
-              color:"var(--text-primary)",boxSizing:"border-box"}}/>
-        </div>
-      </div>
-      {err && <div style={{fontSize:12,color:"var(--text-danger)",marginBottom:12}}>{err}</div>}
-      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-        <button className="btn ghost" onClick={onCancel}>Cancel</button>
-        <button className="btn" disabled={busy||!id.trim()} onClick={submit}>
-          {busy?"Creating…":"Create site"}
-        </button>
-      </div>
-    </div>
-  );
-}
+// ── unified add site form ─────────────────────────────────────────────────────
+// Used for both new and completed sites.
+// Collects site properties → creates node → triggers upload flow.
+function AddSiteForm({ onDone, onCancel }) {
+  const [siteType,    setSiteType]    = useState(null);   // "new" | "completed"
+  const [id,          setId]          = useState("");
+  const [name,        setName]        = useState("");
+  const [address,     setAddress]     = useState("");
+  const [coordSystem, setCoordSystem] = useState("");
+  const [busy,        setBusy]        = useState(false);
+  const [err,         setErr]         = useState(null);
 
-// ── add site dialog (type picker) ─────────────────────────────────────────────
-function AddSiteDialog({ onDone, onCancel, onGoIngest }) {
-  const [siteType, setSiteType] = useState(null);
+  // Step 1 — pick site type
   if (!siteType) return (
     <div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.6)",
       display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
       <div style={{background:"var(--surface-2)",borderRadius:14,padding:"28px 28px 24px",
         maxWidth:480,width:"100%",border:"1px solid var(--border)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-          <span style={{fontWeight:500,fontSize:16,flex:1}}>Add a site</span>
-          <button onClick={onCancel} style={{background:"none",border:"none",cursor:"pointer",
-            color:"var(--text-muted)",fontSize:18}}>×</button>
+          <span style={{fontWeight:600,fontSize:16,flex:1}}>Add a site</span>
+          <button onClick={onCancel}
+            style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:18}}>×</button>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <button onClick={()=>onGoIngest("new")} style={{padding:"16px 20px",borderRadius:10,textAlign:"left",cursor:"pointer",
-            border:"2px solid var(--border-accent)",background:"var(--bg-accent)"}}>
-            <div style={{fontWeight:500,fontSize:14,color:"var(--text-accent)",marginBottom:4}}>✦ New site — predict decisions</div>
+          <button onClick={()=>setSiteType("new")}
+            style={{padding:"16px 20px",borderRadius:10,textAlign:"left",cursor:"pointer",
+              border:"2px solid var(--border-accent)",background:"var(--bg-accent)"}}>
+            <div style={{fontWeight:500,fontSize:14,color:"var(--text-accent)",marginBottom:4}}>
+              ✦ New site — predict decisions
+            </div>
             <div style={{fontSize:12,color:"var(--text-accent)",opacity:.8,lineHeight:1.5}}>
-              Piling hasn't happened yet. Upload geotech data and the tool will predict pre-drill vs driven.
+              Piling hasn't started. Upload geotech data and the tool predicts pre-drill vs driven per zone.
             </div>
           </button>
-          <button onClick={()=>setSiteType("completed")} style={{padding:"16px 20px",borderRadius:10,textAlign:"left",cursor:"pointer",
-            border:"2px solid var(--border-strong)",background:"var(--surface-1)"}}>
-            <div style={{fontWeight:500,fontSize:14,color:"var(--text-primary)",marginBottom:4}}>✓ Completed site</div>
+          <button onClick={()=>setSiteType("completed")}
+            style={{padding:"16px 20px",borderRadius:10,textAlign:"left",cursor:"pointer",
+              border:"2px solid var(--border-strong)",background:"var(--surface-1)"}}>
+            <div style={{fontWeight:500,fontSize:14,color:"var(--text-primary)",marginBottom:4}}>
+              ✓ Completed site
+            </div>
             <div style={{fontSize:12,color:"var(--text-secondary)",lineHeight:1.5}}>
-              Piling is done. Decisions are known. Adds to historical database for future predictions.
+              Piling is done and decisions are known. Adds to the historical database for future predictions.
             </div>
           </button>
         </div>
       </div>
     </div>
   );
+
+  // Step 2 — fill in site details
+  async function submit() {
+    const trimId = id.trim();
+    if (!trimId) { setErr("Site ID is required"); return; }
+    setBusy(true); setErr(null);
+    try {
+      await api.addNode("site", {
+        id:                trimId,
+        name:              name.trim() || trimId,
+        address:           address.trim() || undefined,
+        coordinate_system: coordSystem.trim() || undefined,
+        status:            siteType,
+      });
+      onDone(trimId, siteType);
+    } catch(e) { setErr(e.message); setBusy(false); }
+  }
+
+  const inputStyle = {
+    width:"100%", padding:"8px 12px", borderRadius:8, fontSize:13,
+    border:"1px solid var(--border-strong)", background:"var(--surface-1)",
+    color:"var(--text-primary)", boxSizing:"border-box", outline:"none",
+  };
+  const labelStyle = { fontSize:12, color:"var(--text-secondary)",
+    display:"block", marginBottom:4, fontWeight:500 };
+
   return (
     <div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.6)",
       display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
-      <CompletedSiteForm onDone={onDone} onBack={()=>setSiteType(null)} onCancel={onCancel}/>
+      <div style={{background:"var(--surface-2)",borderRadius:14,
+        padding:"28px 28px 24px",maxWidth:460,width:"100%",
+        border:"1px solid var(--border)"}}>
+
+        {/* header */}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+          <button onClick={()=>setSiteType(null)}
+            style={{background:"none",border:"none",cursor:"pointer",
+              color:"var(--text-muted)",fontSize:18}}>←</button>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:15}}>
+              {siteType==="new" ? "New site" : "Completed site"}
+            </div>
+            <div style={{fontSize:12,color:"var(--text-secondary)"}}>
+              {siteType==="new"
+                ? "Create the site — you'll upload data next."
+                : "Create the site — you'll upload data and set zone decisions next."}
+            </div>
+          </div>
+          <button onClick={onCancel}
+            style={{background:"none",border:"none",cursor:"pointer",
+              color:"var(--text-muted)",fontSize:18}}>×</button>
+        </div>
+
+        {/* type badge */}
+        <div style={{marginBottom:20}}>
+          <span style={{fontSize:11,padding:"2px 8px",borderRadius:10,fontWeight:500,
+            background:siteType==="new"?"var(--bg-accent)":"var(--bg-success)",
+            color:siteType==="new"?"var(--text-accent)":"var(--text-success)",
+            border:`1px solid ${siteType==="new"?"var(--border-accent)":"var(--border-success)"}`}}>
+            {siteType==="new" ? "✦ New" : "✓ Completed"}
+          </span>
+        </div>
+
+        {/* fields */}
+        <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:16}}>
+          <div>
+            <label style={labelStyle}>
+              Site ID <span style={{color:"var(--text-danger)"}}>*</span>
+            </label>
+            <input value={id} onChange={e=>setId(e.target.value)}
+              placeholder="e.g. Maryvale"
+              style={inputStyle}
+              onFocus={e=>e.target.style.borderColor="var(--border-accent)"}
+              onBlur={e=>e.target.style.borderColor="var(--border-strong)"}/>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:4}}>
+              Unique identifier — used as the primary key in the database.
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Site name</label>
+            <input value={name} onChange={e=>setName(e.target.value)}
+              placeholder="e.g. Maryvale Solar Farm"
+              style={inputStyle}
+              onFocus={e=>e.target.style.borderColor="var(--border-accent)"}
+              onBlur={e=>e.target.style.borderColor="var(--border-strong)"}/>
+          </div>
+          <div>
+            <label style={labelStyle}>Address</label>
+            <input value={address} onChange={e=>setAddress(e.target.value)}
+              placeholder="e.g. 123 Solar Rd, Maryvale VIC 3840"
+              style={inputStyle}
+              onFocus={e=>e.target.style.borderColor="var(--border-accent)"}
+              onBlur={e=>e.target.style.borderColor="var(--border-strong)"}/>
+          </div>
+          <div>
+            <label style={labelStyle}>Coordinate system</label>
+            <input value={coordSystem} onChange={e=>setCoordSystem(e.target.value)}
+              placeholder="e.g. GDA2020 MGA Zone 55"
+              style={inputStyle}
+              onFocus={e=>e.target.style.borderColor="var(--border-accent)"}
+              onBlur={e=>e.target.style.borderColor="var(--border-strong)"}/>
+          </div>
+        </div>
+
+        {err && (
+          <div style={{fontSize:12,color:"var(--text-danger)",marginBottom:12,
+            padding:"6px 10px",background:"var(--bg-danger)",borderRadius:6,
+            border:"1px solid var(--border-danger)"}}>
+            {err}
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button className="btn ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn" disabled={busy||!id.trim()} onClick={submit}>
+            {busy ? "Creating…" : "Create site →"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
+
 
 // ── site card ─────────────────────────────────────────────────────────────────
 function SiteCard({ site, onDelete, onZones, onGoIngest }) {
@@ -499,7 +578,7 @@ function SiteCard({ site, onDelete, onZones, onGoIngest }) {
 }
 
 
-export default function ManageSites({ onNavigate }) {
+export default function ManageSites({ onGoIngest }) {
   const [sites,   setSites]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
@@ -540,10 +619,10 @@ export default function ManageSites({ onNavigate }) {
       {delSite && <DeleteDialog site={delSite} busy={busyDel}
         onConfirm={handleDelete} onCancel={()=>setDelSite(null)}/>}
       {zoneSite && <ZonePanel site={zoneSite} onClose={()=>setZoneSite(null)}/>}
-      {addOpen  && <AddSiteDialog
+      {addOpen  && <AddSiteForm
         onDone={()=>{ setAddOpen(false); load(); }}
         onCancel={()=>setAddOpen(false)}
-        onGoIngest={(type)=>{ setAddOpen(false); onNavigate&&onNavigate("ingest",{siteType:type}); }}
+        onDone={(siteId, siteType) => { setAddOpen(false); load(); onGoIngest&&onGoIngest(siteId, siteType); }}
       />}
 
       {/* header */}
@@ -607,7 +686,7 @@ export default function ManageSites({ onNavigate }) {
             {newSites.map(s=>(
               <SiteCard key={s.site_id} site={s}
                 onDelete={setDelSite} onZones={setZoneSite}
-                onGoIngest={type=>onNavigate&&onNavigate("ingest",{siteType:type,siteId:s.site_id})}/>
+                onGoIngest={(siteId)=>onGoIngest&&onGoIngest(siteId,s.status||"new")}/>
             ))}
           </div>
         </section>
