@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { api } from "../api.js";
 
 const SHEET_ORDER = [
@@ -93,14 +93,13 @@ function LoadingOverlay({ progress, onCancel }) {
         border:"1px solid var(--border-strong)",
         boxShadow:"0 24px 64px rgba(0,0,0,.6)"}}>
 
-        {/* spinner + title */}
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
           <i className="ti ti-loader-2"
             style={{fontSize:32,animation:"spin 1s linear infinite",
               color:rateLimited?"var(--text-warning)":"var(--text-accent)",flexShrink:0}} aria-hidden />
           <div>
             <div style={{fontWeight:600,fontSize:16,color:"var(--text-primary)"}}>
-              {rateLimited ? "Rate limited — waiting…" : "Extracting data"}
+              {rateLimited ? "Rate limited — waiting…" : (label || "Working…")}
             </div>
             <div style={{fontSize:12,color:"var(--text-secondary)",marginTop:2}}>
               {currentFile || "Analysing PDF tables and mapping to schema"}
@@ -108,7 +107,6 @@ function LoadingOverlay({ progress, onCancel }) {
           </div>
         </div>
 
-        {/* rate limit warning */}
         {rateLimited && (
           <div style={{padding:"8px 12px",background:"var(--bg-warning)",
             border:"1px solid var(--border-warning)",borderRadius:8,
@@ -119,7 +117,6 @@ function LoadingOverlay({ progress, onCancel }) {
           </div>
         )}
 
-        {/* progress bar */}
         {total > 0 && (
           <div style={{marginBottom:16}}>
             <div style={{display:"flex",justifyContent:"space-between",
@@ -145,7 +142,6 @@ function LoadingOverlay({ progress, onCancel }) {
           </div>
         )}
 
-        {/* cancel */}
         <button onClick={onCancel}
           style={{width:"100%",padding:"9px",borderRadius:8,
             border:"1px solid var(--border-danger)",background:"transparent",
@@ -162,8 +158,10 @@ function LoadingOverlay({ progress, onCancel }) {
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
-export default function Ingest({ initSiteType }) {
-  const [siteType, setSiteType] = useState(initSiteType || null);
+// siteId / siteType are provided by App.jsx — the site is already created on the
+// Sites page (via AddSiteForm) before this component is ever shown.
+export default function Ingest({ siteId = null, siteType = null, onBack }) {
+  const [uploadMode, setUploadMode] = useState("pdf");   // "pdf" | "xlsx" — stage 1 method
   const [pdfs,     setPdfs]     = useState([]);
   const [busy,     setBusy]     = useState(false);
   const [progress, setProgress] = useState({ done:0, total:0, label:"", rateLimited:false, currentFile:"" });
@@ -175,9 +173,8 @@ export default function Ingest({ initSiteType }) {
   const jobIdRef   = useRef(null);
   const cancelledRef = useRef(false);
 
-  useEffect(() => { if (initSiteType) setSiteType(initSiteType); }, [initSiteType]);
-
-  const stage = preview ? (result ? 3 : 2) : 1;
+  // stage 3 reached either via PDF review (preview set) or direct xlsx import (no preview)
+  const stage = result ? 3 : (preview ? 2 : 1);
 
   // ── cancel ────────────────────────────────────────────────────────────────
   async function cancel() {
@@ -191,7 +188,7 @@ export default function Ingest({ initSiteType }) {
     setProgress({ done:0, total:0, label:"", rateLimited:false, currentFile:"" });
   }
 
-  // ── stage 1: SSE extraction ───────────────────────────────────────────────
+  // ── stage 1 (pdf mode): SSE extraction ──────────────────────────────────────
   async function runExtract() {
     setBusy(true); setError(null); cancelledRef.current = false;
     setProgress({ done:0, total:0, label:"Uploading…", rateLimited:false, currentFile:"" });
@@ -203,6 +200,7 @@ export default function Ingest({ initSiteType }) {
     const form = new FormData();
     pdfs.forEach(f => form.append("files", f));
     if (siteType) form.append("site_type", siteType);
+    if (siteId)   form.append("site_id", siteId);
 
     try {
       const resp = await fetch(`${base}/ingest/extract/${jobId}`, { method:"POST", body:form });
@@ -222,7 +220,7 @@ export default function Ingest({ initSiteType }) {
 
         buf += decoder.decode(value, { stream: true });
         const messages = buf.split("\n\n");
-        buf = messages.pop(); // last may be incomplete
+        buf = messages.pop();
 
         for (const msg of messages) {
           if (!msg.trim()) continue;
@@ -254,7 +252,6 @@ export default function Ingest({ initSiteType }) {
               setProgress(p => ({...p, rateLimited:true, label:data.message}));
               break;
             case "info":
-              // informational (e.g. appendix detected) — show as a dim note, not an error
               setError(prev => prev ? `${prev}\nℹ ${data.message}` : `ℹ ${data.message}`);
               break;
             case "warning":
@@ -286,7 +283,7 @@ export default function Ingest({ initSiteType }) {
     jobIdRef.current = null;
   }
 
-  // ── download prefilled xlsx (blocking — no progress needed) ───────────────
+  // ── download prefilled xlsx (blocking) ──────────────────────────────────────
   async function downloadPrefilled() {
     setBusy(true); setError(null);
     setProgress({ done:0, total:0, label:"Building spreadsheet…", rateLimited:false, currentFile:"" });
@@ -294,8 +291,8 @@ export default function Ingest({ initSiteType }) {
       const form = new FormData();
       pdfs.forEach(f => form.append("files", f));
       if (siteType) form.append("site_type", siteType);
+      if (siteId)   form.append("site_id", siteId);
       const base = await api.base();
-      // reuse SSE extract with a temp job but just collect data
       const r = await fetch(`${base}/ingest/download-prefilled`, { method:"POST", body:form });
       if (!r.ok) throw new Error(r.statusText);
       const blob = await r.blob();
@@ -312,13 +309,15 @@ export default function Ingest({ initSiteType }) {
     a.href = URL.createObjectURL(blob); a.download = "geotech_input_template.xlsx"; a.click();
   }
 
-  // ── import final xlsx ─────────────────────────────────────────────────────
+  // ── import final xlsx — used both for direct-xlsx mode and post-PDF-review ──
   async function runImport() {
     if (!xlFile) return;
     setBusy(true); setError(null);
     setProgress({ done:0, total:0, label:"Importing to graph…", rateLimited:false, currentFile:"" });
     try {
-      const form = new FormData(); form.append("file", xlFile);
+      const form = new FormData();
+      form.append("file", xlFile);
+      if (siteId) form.append("site_id", siteId);
       const r = await fetch(`${await api.base()}/ingest/import`, { method:"POST", body:form });
       if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.statusText);
       setResult(await r.json());
@@ -328,7 +327,7 @@ export default function Ingest({ initSiteType }) {
 
   function reset() {
     setPdfs([]); setPreview(null); setXlFile(null);
-    setResult(null); setError(null); setSiteType(null);
+    setResult(null); setError(null); setUploadMode("pdf");
     setProgress({ done:0, total:0, label:"", rateLimited:false, currentFile:"" });
   }
 
@@ -339,99 +338,155 @@ export default function Ingest({ initSiteType }) {
 
       {busy && <LoadingOverlay progress={progress} onCancel={cancel} />}
 
-      {/* site type picker */}
-      {!siteType && !preview && !result && (
-        <div style={{marginBottom:24}}>
-          <p style={{fontWeight:500,margin:"0 0 12px",fontSize:15}}>What kind of site is this?</p>
-          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-            <button onClick={() => setSiteType("new")} style={{
-              flex:1,minWidth:220,padding:"16px 20px",borderRadius:10,textAlign:"left",cursor:"pointer",
-              border:"2px solid var(--border-accent)",background:"var(--bg-accent)"}}>
-              <div style={{fontWeight:500,fontSize:14,color:"var(--text-accent)",marginBottom:4}}>
-                ✦ New site
-              </div>
-              <div style={{fontSize:12,color:"var(--text-accent)",opacity:.8,lineHeight:1.5}}>
-                Piling hasn't happened yet. Upload geotech data to predict pre-drill vs driven per zone.
-              </div>
-            </button>
-            <button onClick={() => setSiteType("completed")} style={{
-              flex:1,minWidth:220,padding:"16px 20px",borderRadius:10,textAlign:"left",cursor:"pointer",
-              border:"2px solid var(--border-strong)",background:"var(--surface-1)"}}>
-              <div style={{fontWeight:500,fontSize:14,color:"var(--text-primary)",marginBottom:4}}>
-                ✓ Completed site
-              </div>
-              <div style={{fontSize:12,color:"var(--text-secondary)",lineHeight:1.5}}>
-                Piling is done. Decisions are known. Adds to the historical database for predictions.
-              </div>
-            </button>
-          </div>
-        </div>
+      {/* back button — always visible at top-left */}
+      {onBack && (
+        <button onClick={onBack}
+          style={{display:"flex",alignItems:"center",gap:6,marginBottom:18,
+            background:"none",border:"1px solid var(--border-strong)",
+            borderRadius:8,cursor:"pointer",fontSize:13,
+            color:"var(--text-secondary)",padding:"6px 12px"}}
+          onMouseOver={e=>{e.currentTarget.style.color="var(--text-primary)";e.currentTarget.style.borderColor="var(--border-accent)";}}
+          onMouseOut={e=>{e.currentTarget.style.color="var(--text-secondary)";e.currentTarget.style.borderColor="var(--border-strong)";}}>
+          ← Back to Sites
+        </button>
       )}
 
-      {siteType && !preview && !result && (
+      {/* site info banner — site was already created on the Sites page */}
+      {siteType && (
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,
-          padding:"8px 14px",background:"var(--surface-1)",borderRadius:8,border:"1px solid var(--border)"}}>
-          <span style={{fontSize:13,color:"var(--text-secondary)"}}>Adding as:</span>
+          padding:"10px 16px",background:"var(--surface-1)",borderRadius:8,border:"1px solid var(--border)"}}>
           <span style={{fontSize:13,fontWeight:500,color:"var(--text-primary)"}}>
-            {siteType==="new" ? "New site (predict decisions)" : "Completed site (historical)"}
+            {siteId}
           </span>
-          <button onClick={() => setSiteType(null)}
-            style={{marginLeft:6,background:"none",border:"none",cursor:"pointer",
-              color:"var(--text-muted)",fontSize:12}}>change</button>
+          <span style={{fontSize:12,color:"var(--text-secondary)"}}>
+            {siteType==="new" ? "New site — predictions pending" : "Completed site"}
+          </span>
         </div>
       )}
 
       {/* step progress bar */}
       {siteType && (
         <div style={{display:"flex",gap:0,marginBottom:28,borderRadius:8,overflow:"hidden"}}>
-          {[["1","Upload PDFs"],["2","Review & download"],["3","Import to graph"]].map(([n,label],i) => (
-            <div key={n} style={{flex:1,padding:"10px 16px",fontSize:13,
-              fontWeight:stage>=i+1?500:400,
-              background:stage>i+1?"var(--bg-success)":stage===i+1?"var(--bg-accent)":"var(--surface-1)",
-              color:stage>=i+1?(stage>i+1?"var(--text-success)":"var(--text-accent)"):"var(--text-muted)",
-              borderRight:i<2?"1px solid var(--border)":"none",
-              display:"flex",alignItems:"center",gap:8}}>
-              <span style={{width:22,height:22,borderRadius:"50%",display:"flex",
-                alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,
-                background:stage>i+1?"var(--bg-success)":stage===i+1?"var(--text-accent)":"var(--border-strong)",
-                color:stage===i+1?"#fff":"inherit"}}>
-                {stage>i+1?"✓":n}
-              </span>
-              {label}
-            </div>
-          ))}
+          {(uploadMode==="xlsx"
+            ? [["1","Upload spreadsheet"],["3","Import to graph"]]
+            : [["1","Upload PDFs"],["2","Review & download"],["3","Import to graph"]]
+          ).map(([n,label],i,arr) => {
+            const stepNum = parseInt(n);
+            return (
+              <div key={n} style={{flex:1,padding:"10px 16px",fontSize:13,
+                fontWeight:stage>=stepNum?500:400,
+                background:stage>stepNum?"var(--bg-success)":stage===stepNum?"var(--bg-accent)":"var(--surface-1)",
+                color:stage>=stepNum?(stage>stepNum?"var(--text-success)":"var(--text-accent)"):"var(--text-muted)",
+                borderRight:i<arr.length-1?"1px solid var(--border)":"none",
+                display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:22,height:22,borderRadius:"50%",display:"flex",
+                  alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,
+                  background:stage>stepNum?"var(--bg-success)":stage===stepNum?"var(--text-accent)":"var(--border-strong)",
+                  color:stage===stepNum?"#fff":"inherit"}}>
+                  {stage>stepNum?"✓":n}
+                </span>
+                {label}
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* ── stage 1 ── */}
       {stage===1 && siteType && (
-        <div style={{display:"flex",flexDirection:"column",gap:20}}>
-          <FileDropZone accept=".pdf" multiple disabled={busy}
-            label="Drop your PDFs here or click to browse"
-            sub="PLT reports, GIR, GFR — upload as many as you have"
-            onFiles={fs => setPdfs(prev => {
-              const names = new Set(prev.map(f => f.name));
-              return [...prev, ...fs.filter(f => !names.has(f.name))];
-            })} />
+        <div style={{display:"flex",flexDirection:"column",gap:24}}>
 
-          {pdfs.length > 0 && (
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {pdfs.map((f,i) => (
-                <div key={f.name} style={{display:"flex",alignItems:"center",gap:10,
-                  padding:"8px 12px",background:"var(--surface-1)",borderRadius:8,
-                  border:"1px solid var(--border)"}}>
-                  <i className="ti ti-file-type-pdf"
-                    style={{color:"var(--text-danger)",fontSize:18}} aria-hidden />
-                  <span style={{flex:1,fontSize:13}}>{f.name}</span>
-                  <span style={{fontSize:12,color:"var(--text-muted)"}}>
-                    {(f.size/1024).toFixed(0)} KB
-                  </span>
-                  <button onClick={() => setPdfs(p => p.filter((_,j) => j!==i))}
+          {/* method toggle */}
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setUploadMode("pdf")}
+              style={{flex:1,padding:"10px 16px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500,
+                border:`1px solid ${uploadMode==="pdf"?"var(--border-accent)":"var(--border)"}`,
+                background:uploadMode==="pdf"?"var(--bg-accent)":"var(--surface-1)",
+                color:uploadMode==="pdf"?"var(--text-accent)":"var(--text-secondary)"}}>
+              Upload PDFs to extract
+            </button>
+            <button onClick={()=>setUploadMode("xlsx")}
+              style={{flex:1,padding:"10px 16px",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500,
+                border:`1px solid ${uploadMode==="xlsx"?"var(--border-accent)":"var(--border)"}`,
+                background:uploadMode==="xlsx"?"var(--bg-accent)":"var(--surface-1)",
+                color:uploadMode==="xlsx"?"var(--text-accent)":"var(--text-secondary)"}}>
+              Upload completed spreadsheet
+            </button>
+          </div>
+
+          {uploadMode === "pdf" && (
+            <>
+              <FileDropZone accept=".pdf" multiple disabled={busy}
+                label="Drop your PDFs here or click to browse"
+                sub="PLT reports, GIR, GFR — upload as many as you have"
+                onFiles={fs => setPdfs(prev => {
+                  const names = new Set(prev.map(f => f.name));
+                  return [...prev, ...fs.filter(f => !names.has(f.name))];
+                })} />
+
+              {pdfs.length > 0 && (
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {pdfs.map((f,i) => (
+                    <div key={f.name} style={{display:"flex",alignItems:"center",gap:10,
+                      padding:"8px 12px",background:"var(--surface-1)",borderRadius:8,
+                      border:"1px solid var(--border)"}}>
+                      <i className="ti ti-file-type-pdf"
+                        style={{color:"var(--text-danger)",fontSize:18}} aria-hidden />
+                      <span style={{flex:1,fontSize:13}}>{f.name}</span>
+                      <span style={{fontSize:12,color:"var(--text-muted)"}}>
+                        {(f.size/1024).toFixed(0)} KB
+                      </span>
+                      <button onClick={() => setPdfs(p => p.filter((_,j) => j!==i))}
+                        style={{background:"none",border:"none",cursor:"pointer",
+                          color:"var(--text-muted)",fontSize:16}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <button className="btn" disabled={pdfs.length===0||busy} onClick={runExtract}>
+                  ✦ Extract data
+                </button>
+                <button className="btn ghost" onClick={downloadBlank}>
+                  ↓ Blank template
+                </button>
+              </div>
+              <p style={{fontSize:12,color:"var(--text-muted)",margin:0}}>
+                No PDFs? Download the blank template, fill manually, then switch to
+                "Upload completed spreadsheet" above.
+              </p>
+            </>
+          )}
+
+          {uploadMode === "xlsx" && (
+            <>
+              <FileDropZone accept=".xlsx" multiple={false} disabled={busy}
+                label="Drop your completed .xlsx here"
+                sub="The filled-in template, ready to import directly to the graph"
+                onFiles={([f]) => setXlFile(f)} />
+
+              {xlFile && (
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
+                  background:"var(--surface-1)",borderRadius:8,border:"1px solid var(--border)"}}>
+                  <i className="ti ti-file-spreadsheet"
+                    style={{color:"var(--text-success)",fontSize:18}} aria-hidden />
+                  <span style={{flex:1,fontSize:13}}>{xlFile.name}</span>
+                  <button onClick={() => setXlFile(null)}
                     style={{background:"none",border:"none",cursor:"pointer",
                       color:"var(--text-muted)",fontSize:16}}>×</button>
                 </div>
-              ))}
-            </div>
+              )}
+
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <button className="btn" disabled={!xlFile||busy} onClick={runImport}>
+                  → Import to graph
+                </button>
+                <button className="btn ghost" onClick={downloadBlank}>
+                  ↓ Blank template
+                </button>
+              </div>
+            </>
           )}
 
           {error && (
@@ -441,22 +496,10 @@ export default function Ingest({ initSiteType }) {
               {error}
             </div>
           )}
-
-          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-            <button className="btn" disabled={pdfs.length===0||busy} onClick={runExtract}>
-              ✦ Extract data
-            </button>
-            <button className="btn ghost" onClick={downloadBlank}>
-              ↓ Blank template
-            </button>
-          </div>
-          <p style={{fontSize:12,color:"var(--text-muted)",margin:0}}>
-            No PDFs? Download the blank template, fill manually, then upload in step 3.
-          </p>
         </div>
       )}
 
-      {/* ── stage 2 ── */}
+      {/* ── stage 2 (pdf review) ── */}
       {stage===2 && preview && (
         <div style={{display:"flex",flexDirection:"column",gap:20}}>
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -566,8 +609,8 @@ export default function Ingest({ initSiteType }) {
                 <Badge n={`${r.errors.length} skipped`} color="warning" />}
             </div>
           ))}
-          <button className="btn ghost" style={{marginTop:8}} onClick={reset}>
-            + Add another site
+          <button className="btn" style={{marginTop:8}} onClick={onBack||reset}>
+            ← Back to Sites
           </button>
         </div>
       )}

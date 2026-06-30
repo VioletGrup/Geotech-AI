@@ -14,7 +14,7 @@ import asyncio, io, json, os, re, threading, time, traceback, uuid
 from typing import List
 
 import openpyxl
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.ingestion.pdf_extractor import extract_pdf, tables_as_text, ExtractedTable
@@ -801,11 +801,41 @@ async def download_prefilled(files: List[UploadFile] = File(...)):
     )
 
 
+import datetime as _dt
+
+
+def _coerce_cell(v):
+    """
+    Convert openpyxl cell values into JSON-serializable Python types.
+    - time/datetime/date/timedelta -> string
+    - "true"/"false" str           -> bool
+    - everything else returned unchanged
+    """
+    if isinstance(v, _dt.datetime):
+        return v.isoformat(sep=" ")
+    if isinstance(v, _dt.date):
+        return v.isoformat()
+    if isinstance(v, _dt.time):
+        return v.strftime("%H:%M:%S")
+    if isinstance(v, _dt.timedelta):
+        total = int(v.total_seconds())
+        h, rem = divmod(total, 3600)
+        m, sec = divmod(rem, 60)
+        return f"{h:02d}:{m:02d}:{sec:02d}"
+    if isinstance(v, str) and v.strip().lower() in ("true", "false"):
+        return v.strip().lower() == "true"
+    return v
+
+
 @router.post("/import")
-async def import_xlsx(file: UploadFile = File(...)):
+async def import_xlsx(file: UploadFile = File(...), site_id: str = Form(None)):
     """
     Accept the final edited xlsx and bulk-write every sheet to the graph
     via the existing /nodes/{type}/bulk endpoints (internal call).
+
+    site_id is injected into every sub-site row (zone, borehole, pile-test-location,
+    etc.) since the v4 schema requires site_id on every node below Site. soil-type
+    is the only sheet excluded — soil types are global, not site-scoped.
     """
     import httpx, os
     if not file.filename.lower().endswith(".xlsx"):
@@ -825,14 +855,21 @@ async def import_xlsx(file: UploadFile = File(...)):
             rows = []
             for row in ws.iter_rows(min_row=2, values_only=True):
                 obj = {cols[i]: v for i, v in enumerate(row) if i < len(cols)}
+
+                # inject site_id for every sub-site sheet (soil-type is global)
+                if site_id and sheet_name != "soil-type":
+                    if not obj.get("site_id"):
+                        obj["site_id"] = site_id
+
                 # skip rows where the id field is blank
                 id_col = "unit_no" if sheet_name == "soil-type" else "id"
                 if not obj.get(id_col):
                     continue
-                # convert Excel booleans / strings
-                for k, v in obj.items():
-                    if isinstance(v, str) and v.lower() in ("true","false"):
-                        obj[k] = v.lower() == "true"
+
+                # coerce Excel cell types (time/date/bool) to JSON-serializable values
+                for k, v in list(obj.items()):
+                    obj[k] = _coerce_cell(v)
+
                 rows.append(obj)
 
             if not rows:

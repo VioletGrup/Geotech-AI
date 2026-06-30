@@ -25,7 +25,6 @@ export default function App() {
 
   const NAV = [
     { id: "manage",  label: "Sites" },
-    { id: "ingest",  label: "Upload data" },
     { id: "copilot", label: "Copilot" },
   ];
 
@@ -61,7 +60,7 @@ export default function App() {
 
       <main className="content">
         <div className="head">
-          <h2>{NAV.find(v => v.id === view)?.label}</h2>
+          <h2>{view === "ingest" ? "Upload data" : NAV.find(v => v.id === view)?.label}</h2>
           <p>{BLURBS[view]}</p>
         </div>
 
